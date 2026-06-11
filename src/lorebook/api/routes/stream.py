@@ -1,20 +1,38 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, AsyncIterator, Dict
+import time
+from typing import AsyncIterator, Dict
 
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
-from lorebook.graph import build_app
+from lorebook.api.storage import save_run_result
+from lorebook.llm import stream_local_llm
 from lorebook.state import WizardState
 
 router = APIRouter()
 
 
-async def _event_generator(raw_idea: str, request: Request) -> AsyncIterator[Dict[str, str]]:
-    initial_state: WizardState = {
+LOREMASTER_SYSTEM = (
+    "You are an expert world builder. Expand the user's idea into a structured "
+    "setting with 3 distinct world rules."
+)
+
+CHARACTER_SYSTEM = (
+    "You are a SillyTavern character designer. Create 1 main companion character "
+    "based on this world setting. Format as clean text."
+)
+
+EDITOR_SYSTEM = (
+    "You are a critical editor. Review the character design against the world "
+    "setting. If it feels generic or breaks the world rules, write critique. If "
+    "it is excellent, reply exactly with: PASSED."
+)
+
+
+def _empty_state(raw_idea: str) -> WizardState:
+    return {
         "raw_idea": raw_idea,
         "world_setting": "",
         "characters": [],
@@ -22,18 +40,109 @@ async def _event_generator(raw_idea: str, request: Request) -> AsyncIterator[Dic
         "passed_inspection": False,
     }
 
-    graph = build_app()
 
-    async for event in graph.astream(initial_state, config={"recursion_limit": 10}):
-        if await request.is_disconnected():
-            break
-        for node_name, node_output in event.items():
+async def _event_generator(raw_idea: str, request: Request) -> AsyncIterator[Dict[str, str]]:
+    state = _empty_state(raw_idea)
+    start = time.monotonic()
+
+    async def ensure_connected() -> bool:
+        return not await request.is_disconnected()
+
+    for _cycle in range(3):
+        if not await ensure_connected():
+            return
+
+        # loremaster
+        yield {"event": "node-start", "data": json.dumps({"node": "loremaster"})}
+        world_setting = ""
+        for chunk in stream_local_llm(LOREMASTER_SYSTEM, state["raw_idea"]):
+            if not await ensure_connected():
+                return
+            world_setting += chunk
+            yield {"event": "node-token", "data": json.dumps({"node": "loremaster", "chunk": chunk})}
+        state["world_setting"] = world_setting
+        yield {
+            "event": "node-complete",
+            "data": json.dumps({"node": "loremaster", "output": {"world_setting": world_setting}}),
+        }
+
+        if not await ensure_connected():
+            return
+
+        # character designer
+        yield {"event": "node-start", "data": json.dumps({"node": "character_designer"})}
+        character_details = ""
+        for chunk in stream_local_llm(CHARACTER_SYSTEM, state["world_setting"]):
+            if not await ensure_connected():
+                return
+            character_details += chunk
             yield {
-                "event": "node",
-                "data": json.dumps({"node": node_name, "output": node_output}),
+                "event": "node-token",
+                "data": json.dumps({"node": "character_designer", "chunk": chunk}),
             }
-        await asyncio.sleep(0)
+        state["characters"] = [{"name": "Companion", "details": character_details}]
+        yield {
+            "event": "node-complete",
+            "data": json.dumps(
+                {
+                    "node": "character_designer",
+                    "output": {"characters": [{"name": "Companion", "details": character_details}]},
+                }
+            ),
+        }
 
+        if not await ensure_connected():
+            return
+
+        # editor
+        yield {"event": "node-start", "data": json.dumps({"node": "editor"})}
+        critique_notes = ""
+        prompt = f"Setting:\n{state['world_setting']}\n\nCharacter:\n{character_details}"
+        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt):
+            if not await ensure_connected():
+                return
+            critique_notes += chunk
+            yield {"event": "node-token", "data": json.dumps({"node": "editor", "chunk": chunk})}
+
+        passed = "PASSED" in critique_notes
+        state["passed_inspection"] = passed
+        state["critique_notes"] = "" if passed else critique_notes
+        yield {
+            "event": "node-complete",
+            "data": json.dumps(
+                {
+                    "node": "editor",
+                    "output": {
+                        "passed_inspection": passed,
+                        "critique_notes": "" if passed else critique_notes,
+                    },
+                }
+            ),
+        }
+
+        if passed:
+            break
+
+    elapsed_ms = round((time.monotonic() - start) * 1000)
+    saved = save_run_result(
+        {
+            "raw_idea": raw_idea,
+            "state": state,
+            "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
+        }
+    )
+
+    yield {
+        "event": "run-complete",
+        "data": json.dumps(
+            {
+                "run_id": saved["run_id"],
+                "run_path": saved["run_path"],
+                "state": state,
+                "meta": {"elapsed_ms": elapsed_ms},
+            }
+        ),
+    }
     yield {"event": "done", "data": "{}"}
 
 

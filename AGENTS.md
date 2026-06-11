@@ -36,7 +36,7 @@ The Svelte+Vite frontend lives in `ui/`. Run both together with `scripts/dev.ps1
 
 ## Notes
 
-- LLM calls are made through `call_local_llm` to a local endpoint at `http://localhost:5001/api/v1/generate`.
+- LLM calls are made through `call_local_llm` to a local endpoint at `http://localhost:5001`.
 - `LOREBOOK_LLM_ENDPOINT` env var overrides the default endpoint.
 - Add file export implementation inside `save_assets_node`.
 - Generated outputs go to `outputs/` (gitignored).

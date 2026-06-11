@@ -1,4 +1,6 @@
 <script>
+  import MarkdownBlock from './MarkdownBlock.svelte'
+
   let { workflowState = {}, running = false } = $props()
 
   let activeAgent = $state('loremaster')
@@ -34,7 +36,7 @@
   <div class="panel">
     {#if activeAgent === 'loremaster'}
       {#if worldSetting}
-        <pre>{worldSetting}</pre>
+        <MarkdownBlock source={worldSetting} />
       {:else}
         <p class="empty">{running && lastNode === 'loremaster' ? 'Generating…' : 'No output yet.'}</p>
       {/if}
@@ -43,7 +45,7 @@
       {#if characters.length > 0}
         {#each characters as char}
           <h3>{char.name}</h3>
-          <pre>{char.details}</pre>
+          <MarkdownBlock source={char.details} />
         {/each}
       {:else}
         <p class="empty">{running && lastNode === 'character_designer' ? 'Generating…' : 'No output yet.'}</p>
@@ -54,7 +56,7 @@
         <p class="passed">✓ PASSED</p>
       {:else if passedInspection === false && critiqueNotes}
         <p class="failed">✗ Needs revision</p>
-        <pre>{critiqueNotes}</pre>
+        <MarkdownBlock source={critiqueNotes} />
       {:else}
         <p class="empty">{running && lastNode === 'editor' ? 'Reviewing…' : 'No output yet.'}</p>
       {/if}
@@ -115,13 +117,6 @@
     border-radius: 8px;
     padding: 1rem;
     min-height: 200px;
-  }
-
-  pre {
-    white-space: pre-wrap;
-    font-family: inherit;
-    font-size: 0.9rem;
-    margin: 0;
   }
 
   .empty { color: #94a3b8; font-style: italic; }

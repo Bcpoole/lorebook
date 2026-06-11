@@ -16,7 +16,8 @@ $vite = Start-Process -NoNewWindow -PassThru -FilePath "npm" `
 Write-Host "Both servers running. Press Ctrl+C to stop."
 try {
   Wait-Process -Id $api.Id, $vite.Id
-} finally {
+}
+finally {
   Stop-Process -Id $api.Id -ErrorAction SilentlyContinue
   Stop-Process -Id $vite.Id -ErrorAction SilentlyContinue
 }

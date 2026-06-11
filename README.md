@@ -17,7 +17,7 @@ Lorebook is a local-first Python app for generating a world setting and companio
 ## Prerequisites
 
 - Python 3.10+
-- A local text-generation endpoint at `http://localhost:5001/api/v1/generate`
+- A local text-generation endpoint at `http://localhost:5001`
 - Node.js 20.19+ and npm 10+ for the Svelte frontend
 
 ## Setup (PowerShell on Windows)
@@ -40,6 +40,9 @@ python -m pip install -e .
 Set-Location .\ui
 npm install
 Set-Location ..
+
+# Optional: override the LLM endpoint if your local server uses a different host
+$env:LOREBOOK_LLM_ENDPOINT = "http://localhost:5001"
 ```
 
 ## Run

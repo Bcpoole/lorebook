@@ -19,6 +19,45 @@
     }
   }
 
+  function applyStreamingChunk(node, chunk) {
+    if (node === 'loremaster') {
+      return {
+        ...state,
+        world_setting: `${state.world_setting ?? ''}${chunk}`,
+        _lastNode: node,
+      }
+    }
+
+    if (node === 'character_designer') {
+      const characters = [...(state.characters ?? [])]
+      if (characters.length === 0) {
+        characters.push({ name: 'Companion', details: '' })
+      }
+      characters[0] = {
+        ...characters[0],
+        details: `${characters[0].details ?? ''}${chunk}`,
+      }
+      return {
+        ...state,
+        characters,
+        _lastNode: node,
+      }
+    }
+
+    if (node === 'editor') {
+      return {
+        ...state,
+        critique_notes: `${state.critique_notes ?? ''}${chunk}`,
+        _lastNode: node,
+      }
+    }
+
+    return {
+      ...state,
+      _lastNode: node,
+    }
+  }
+
   async function handleRun({ rawIdea }) {
     state = {}
     meta = {}
@@ -29,9 +68,27 @@
       const params = new URLSearchParams({ raw_idea: rawIdea })
       const es = new EventSource(`/api/stream?${params}`)
 
-      es.addEventListener('node', (e) => {
+      es.addEventListener('node-start', (e) => {
+        const { node } = JSON.parse(e.data)
+        state = { ...state, _lastNode: node }
+      })
+
+      es.addEventListener('node-token', (e) => {
+        const { node, chunk } = JSON.parse(e.data)
+        state = applyStreamingChunk(node, chunk)
+      })
+
+      es.addEventListener('node-complete', (e) => {
         const { node, output } = JSON.parse(e.data)
         state = { ...state, ...output, _lastNode: node }
+      })
+
+      es.addEventListener('run-complete', (e) => {
+        const data = JSON.parse(e.data)
+        state = data.state
+        meta = data.meta
+        lastRun = { runId: data.run_id, runPath: data.run_path }
+        running = false
       })
 
       es.addEventListener('done', () => {
