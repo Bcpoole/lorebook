@@ -1,0 +1,15 @@
+# World Concept: Velundra, the Stormwrought City
+
+## Core Concept
+Velundra is a sprawling metropolis built upon dozens of floating islands of varying sizes, suspended above an endless, churning sea of perpetual storm clouds. The islands are held aloft by a combination of natural levithium deposits and ancient engineering, and they drift in slow, lazy orbits around a central spire known as the Apex Needle — a towering pillar of crystallized storm energy that pierces the cloud layer and anchors the entire archipelago.
+
+## World Rules
+
+### Rule 1: The Tide of Tempests
+The storm below is not merely weather — it is a living, breathing force called **the Tempest**. It obeys no calendar and follows no predictable cycle. The Tempest surges and recedes in waves that can last hours or weeks. During a **Surge**, the clouds rise dramatically, lashing the lower islands with lightning, rain, and wind so fierce that all travel between islands becomes impossible. During an **Ebb**, the clouds thin and descend, allowing clear skies and safe passage — but also exposing the undersides of the islands to the raw, humid air of the storm, which accelerates decay and causes **Storm Rot**, a fungal disease that weakens stone and wood. The citizens of Velundra must constantly adapt: buildings must be reinforced, food must be stored, and the rhythm of daily life is governed entirely by the Tempest's mood.
+
+### Rule 2: The Levithium Economy
+Every island contains veins of **levithium** — a semi-precious mineral that naturally repels gravitational force. It is the single most important resource in Velundra, used to power everything from lifting engines that adjust island altitude to the personal flight devices (called **skitterers**) that allow individuals to leap between islands. Levithium is finite, however. Once extracted, it slowly degrades and loses its anti-gravitational properties over decades. This means the entire civilization is built on a slow-burning resource crisis. Mining levithium is dangerous — tunnels can destabilize islands, and the deeper veins are found closer to the storm, where the air itself becomes toxic. The wealth of an island district is measured by its levithium reserves, and the ruling council, the **Liftwardens**, tightly control extraction rights, altitude permissions, and trade.
+
+### Rule 3: The Underneath
+No one in Velundra has ever seen the

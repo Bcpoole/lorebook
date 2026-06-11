@@ -52,6 +52,18 @@ ruff check .
 pytest -q
 ```
 
+## Offline Fixture Testing
+
+Capture a real local-LLM output once, then run tests without a live connection:
+
+```powershell
+# Capture fixture data from your running local endpoint
+python scripts/capture_test_fixtures.py
+
+# Run tests offline (unit tests monkeypatch LLM calls)
+pytest -q
+```
+
 ## Next Improvements
 
 - Add robust response validation for `call_local_llm`.

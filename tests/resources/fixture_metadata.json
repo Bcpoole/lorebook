@@ -1,0 +1,8 @@
+{
+  "raw_idea": "A city on floating islands above a permanent storm sea.",
+  "world_setting_file": "world_setting.txt",
+  "character_file": "character.txt",
+  "editor_response_file": "editor_response.txt",
+  "editor_critique_file": "editor_critique.txt",
+  "notes": "Fixture captured from a live local LLM run for offline tests."
+}
