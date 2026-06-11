@@ -21,3 +21,10 @@ htmlcov/
 # IDE settings
 .vscode/
 .idea/
+
+# UI build artifacts
+ui/node_modules/
+ui/dist/
+
+# Generated outputs
+outputs/

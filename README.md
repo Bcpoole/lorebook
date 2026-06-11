@@ -1,11 +1,15 @@
 # Lorebook
 
-Small Python project for generating a world setting and companion character through a LangGraph workflow.
+Lorebook is a local-first Python app for generating a world setting and companion character through a LangGraph workflow, with a FastAPI backend and a Svelte frontend.
 
 ## Project Structure
 
 - `src/lorebook/`: Package source (state, nodes, graph, CLI).
+- `src/lorebook/api/`: FastAPI app, routes, and persistence helpers.
 - `run.py`: Compatibility launcher that exposes the package `app`.
+- `ui/`: Svelte + Vite frontend.
+- `scripts/dev.ps1`: Starts the backend and frontend together.
+- `outputs/`: Saved run artifacts and generated assets.
 - `requirements.txt`: Runtime dependencies.
 - `requirements-dev.txt`: Dev and test dependencies.
 - `AGENTS.md`: Agent/role documentation for the pipeline.
@@ -14,6 +18,7 @@ Small Python project for generating a world setting and companion character thro
 
 - Python 3.10+
 - A local text-generation endpoint at `http://localhost:5001/api/v1/generate`
+- Node.js 20.19+ and npm 10+ for the Svelte frontend
 
 ## Setup (PowerShell on Windows)
 
@@ -24,15 +29,22 @@ py -3 -m venv .venv
 # Activate virtual environment
 .\.venv\Scripts\Activate.ps1
 
-# Install dependencies
+# Install Python dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 
 # Install package in editable mode (enables `python -m lorebook`)
 python -m pip install -e .
+
+# Install frontend dependencies
+Set-Location .\ui
+npm install
+Set-Location ..
 ```
 
 ## Run
+
+### Backend only
 
 ```powershell
 # Compatibility launcher
@@ -40,6 +52,15 @@ python run.py
 
 # Package entrypoint
 python -m lorebook
+
+# API server directly
+uvicorn lorebook.api.app:app --reload --port 8000
+```
+
+### Full app
+
+```powershell
+.\scripts\dev.ps1
 ```
 
 ## Development
@@ -50,7 +71,22 @@ ruff check .
 
 # Test
 pytest -q
+
+# Frontend build
+Set-Location .\ui
+npm run build
+Set-Location ..
 ```
+
+## API Endpoints
+
+- `POST /api/run` - blocking workflow run, saves JSON output to `outputs/runs/`
+- `GET /api/stream?raw_idea=...` - SSE stream of per-node updates
+- `GET /api/graph` - Mermaid graph definition for the workflow
+
+## Saved Output
+
+Blocking runs save JSON artifacts under `outputs/runs/` and the UI shows the saved run id and path after each run.
 
 ## Offline Fixture Testing
 
