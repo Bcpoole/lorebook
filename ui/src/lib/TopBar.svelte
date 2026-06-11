@@ -1,5 +1,11 @@
 <script>
-  let { showStats = $bindable(false), streaming = $bindable(true), meta = {} } = $props()
+  let {
+    showStats = $bindable(false),
+    streaming = $bindable(true),
+    autoSave = $bindable(false),
+    meta = {},
+    ongraph = () => {},
+  } = $props()
 </script>
 
 <header>
@@ -12,16 +18,21 @@
     </label>
 
     <label class="toggle">
+      <input type="checkbox" bind:checked={autoSave} />
+      Auto-save
+    </label>
+
+    <label class="toggle">
       <input type="checkbox" bind:checked={showStats} />
       Stats
     </label>
-  </div>
 
-  {#if showStats && meta.elapsed_ms != null}
-    <div class="stats">
-      {meta.elapsed_ms} ms
-    </div>
-  {/if}
+    {#if showStats && meta.elapsed_ms != null}
+      <span class="stats">{meta.elapsed_ms} ms</span>
+    {/if}
+
+    <button class="nav-btn" onclick={ongraph}>Graph</button>
+  </div>
 </header>
 
 <style>
@@ -44,6 +55,7 @@
 
   .controls {
     display: flex;
+    align-items: center;
     gap: 1rem;
   }
 
@@ -58,5 +70,21 @@
   .stats {
     font-size: 0.8rem;
     color: #94a3b8;
+  }
+
+  .nav-btn {
+    padding: 0.3rem 0.9rem;
+    background: transparent;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .nav-btn:hover {
+    border-color: #94a3b8;
+    color: #f1f5f9;
   }
 </style>

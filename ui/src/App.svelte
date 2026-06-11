@@ -2,15 +2,28 @@
   import RawIdeaForm from './lib/RawIdeaForm.svelte'
   import AgentPanel from './lib/AgentPanel.svelte'
   import TopBar from './lib/TopBar.svelte'
+  import Toast from './lib/Toast.svelte'
 
   let state = $state({})
   let meta = $state({})
   let running = $state(false)
   let streaming = $state(true)
+  let autoSave = $state(false)
   let showStats = $state(false)
   let activeTab = $state('agents')
+  let activeAgentTab = $state('loremaster')
   let graphPanelLoad = $state(null)
-  let lastRun = $state(null)
+
+  let pendingSave = $state(null)
+  let savedRun = $state(null)
+  let filename = $state('')
+  let suggesting = $state(false)
+  let toastMessage = $state('')
+  let toastVisible = $state(false)
+
+  function generateDefaultFilename() {
+    return crypto.randomUUID().replace(/-/g, '')
+  }
 
   function openGraphTab() {
     activeTab = 'graph'
@@ -61,11 +74,14 @@
   async function handleRun({ rawIdea }) {
     state = {}
     meta = {}
-    lastRun = null
+    pendingSave = null
+    savedRun = null
+    filename = ''
     running = true
+    activeAgentTab = 'loremaster'
 
     if (streaming) {
-      const params = new URLSearchParams({ raw_idea: rawIdea })
+      const params = new URLSearchParams({ raw_idea: rawIdea, auto_save: String(autoSave) })
       const es = new EventSource(`/api/stream?${params}`)
 
       es.addEventListener('node-start', (e) => {
@@ -83,11 +99,21 @@
         state = { ...state, ...output, _lastNode: node }
       })
 
+      es.addEventListener('save-pending', (e) => {
+        const data = JSON.parse(e.data)
+        pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
+        filename = generateDefaultFilename()
+        toastMessage = 'Save Assets is ready.'
+        toastVisible = true
+      })
+
       es.addEventListener('run-complete', (e) => {
         const data = JSON.parse(e.data)
         state = data.state
         meta = data.meta
-        lastRun = { runId: data.run_id, runPath: data.run_path }
+        savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
+        toastMessage = `Auto-saved as ${data.filename}`
+        toastVisible = true
         running = false
       })
 
@@ -104,46 +130,90 @@
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_idea: rawIdea }),
+        body: JSON.stringify({ raw_idea: rawIdea, auto_save: autoSave }),
       })
       const data = await res.json()
       state = data.state
       meta = data.meta
-      lastRun = { runId: data.run_id, runPath: data.run_path }
+      if (data.pending_save) {
+        pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
+        filename = generateDefaultFilename()
+        toastMessage = 'Save Assets is ready.'
+        toastVisible = true
+      } else {
+        savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
+        toastMessage = `Auto-saved as ${data.filename}`
+        toastVisible = true
+      }
       running = false
+    }
+  }
+
+  async function handleSave(fname) {
+    if (!pendingSave) return
+    const res = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...pendingSave, filename: fname || generateDefaultFilename() }),
+    })
+    const data = await res.json()
+    savedRun = data
+    toastMessage = `Saved as ${data.filename}`
+    toastVisible = true
+  }
+
+  async function handleSuggestName() {
+    if (!pendingSave) return
+    suggesting = true
+    try {
+      const res = await fetch('/api/suggest-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_idea: pendingSave.raw_idea }),
+      })
+      const data = await res.json()
+      filename = data.name
+    } finally {
+      suggesting = false
     }
   }
 </script>
 
-<TopBar bind:showStats bind:streaming {meta} />
+<TopBar bind:showStats bind:streaming bind:autoSave {meta} ongraph={openGraphTab} />
+
+<Toast bind:visible={toastVisible} message={toastMessage} />
 
 <main>
   <RawIdeaForm {running} onrun={handleRun} />
 
-  {#if lastRun}
-    <p class="saved-run">Saved run {lastRun.runId} → {lastRun.runPath}</p>
-  {/if}
-
-  <nav class="tabs">
-    <button class:active={activeTab === 'agents'} onclick={() => (activeTab = 'agents')}>Agents</button>
-    <button class:active={activeTab === 'graph'} onclick={openGraphTab}>Graph</button>
-  </nav>
-
   {#if activeTab === 'agents'}
-    <AgentPanel workflowState={state} {running} />
+    <AgentPanel
+      workflowState={state}
+      {running}
+      bind:activeAgent={activeAgentTab}
+      {pendingSave}
+      {savedRun}
+      bind:filename
+      {suggesting}
+      onsave={handleSave}
+      onsuggestname={handleSuggestName}
+    />
   {:else if activeTab === 'graph'}
-    {#if graphPanelLoad}
-      {#await graphPanelLoad}
+    <div class="graph-section">
+      <button class="back-btn" onclick={() => (activeTab = 'agents')}>← Back</button>
+      {#if graphPanelLoad}
+        {#await graphPanelLoad}
+          <p class="loading">Loading graph…</p>
+        {:then module}
+          {@const GraphPanel = module.default}
+          <GraphPanel />
+        {:catch error}
+          <p class="error">Failed to load graph: {error.message}</p>
+        {/await}
+      {:else}
         <p class="loading">Loading graph…</p>
-      {:then module}
-        {@const GraphPanel = module.default}
-        <GraphPanel />
-      {:catch error}
-        <p class="error">Failed to load graph: {error.message}</p>
-      {/await}
-    {:else}
-      <p class="loading">Loading graph…</p>
-    {/if}
+      {/if}
+    </div>
   {/if}
 </main>
 
@@ -155,36 +225,27 @@
     font-family: system-ui, sans-serif;
   }
 
-  .tabs {
-    display: flex;
-    gap: 0.5rem;
-    margin: 1rem 0;
-    border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 0.25rem;
+  .graph-section {
+    margin-top: 1rem;
   }
 
-  .tabs button {
-    padding: 0.4rem 1rem;
-    border: none;
-    background: none;
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.35rem 0.9rem;
+    margin-bottom: 0.75rem;
+    background: transparent;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #475569;
+    font-size: 0.875rem;
     cursor: pointer;
-    font-size: 0.95rem;
-    color: #64748b;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
   }
 
-  .tabs button.active {
-    color: #1e40af;
-    border-bottom-color: #1e40af;
-    font-weight: 600;
-  }
-
-  .saved-run {
-    margin: 0.75rem 0 0;
-    color: #64748b;
-    font-size: 0.85rem;
-    word-break: break-all;
+  .back-btn:hover {
+    border-color: #94a3b8;
+    color: #1e293b;
   }
 
   .loading,

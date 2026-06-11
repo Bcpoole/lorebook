@@ -127,7 +127,7 @@ def stream_local_llm(
     user_prompt: str,
     endpoint: str | None = None,
     max_context_length: int = 8192,
-    max_length: int = 1024,
+    max_length: int = 2048,
     temperature: float = 0.7,
     max_retries: int = 2,
 ) -> Iterator[str]:

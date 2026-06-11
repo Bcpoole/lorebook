@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from lorebook.api.routes import graph, run, stream
+from lorebook.api.routes import graph, run, save, stream
 
 
 def create_app() -> FastAPI:
@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
     app.include_router(run.router, prefix="/api")
     app.include_router(stream.router, prefix="/api")
     app.include_router(graph.router, prefix="/api")
+    app.include_router(save.router, prefix="/api")
 
     # Serve compiled Svelte build in production.
     dist_dir = Path(__file__).resolve().parents[3] / "ui" / "dist"

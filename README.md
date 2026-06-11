@@ -14,6 +14,12 @@ Lorebook is a local-first Python app for generating a world setting and companio
 - `requirements-dev.txt`: Dev and test dependencies.
 - `AGENTS.md`: Agent/role documentation for the pipeline.
 
+## Quick Start
+
+```powershell
+& ./start.ps1
+```
+
 ## Prerequisites
 
 - Python 3.10+
