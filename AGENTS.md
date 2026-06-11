@@ -1,8 +1,14 @@
 # AGENTS
 
-This repository currently uses a single workflow script in `run.py` that orchestrates a small lore/character generation pipeline.
+This repository uses a package layout under `src/lorebook/` with a compatibility launcher in `run.py`.
+
+- Core graph composition lives in `src/lorebook/graph.py`.
+- Node implementations live in `src/lorebook/nodes.py`.
+- LLM transport helper lives in `src/lorebook/llm.py`.
 
 ## Agent Roles in `run.py`
+
+The logical agent roles are implemented in package node functions and surfaced by the workflow graph.
 
 1. `loremaster_node`
 - Expands a raw idea into world-setting structure and rules.
