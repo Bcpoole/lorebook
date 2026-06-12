@@ -4,16 +4,37 @@
     saved = $bindable({}),
     isDirty = $bindable(false),
     sdStyleOptions = ['balanced'],
+    personaOptions = [],
+    auto = $bindable(false),
+    streaming = $bindable(true),
+    showStats = $bindable(false),
     onSave = () => {},
     onCancel = () => {},
+    onSaveSd = () => {},
+    onCancelSd = () => {},
+    onPersonaChange = () => {},
   } = $props()
 
   let activeTab = $state('experiment')
+  let lastEditedDimension = $state(null)
+
+  const samplerOptions = [
+    'DPM++ 2M',
+    'DPM++ 2M Karras',
+    'Euler',
+    'Euler A',
+    'DPM++ SDE',
+  ]
 
   const defaults = {
     general: {
       outputFormat: 'markdown',
       multilineReplies: true,
+      auto: false,
+      streaming: true,
+      showStats: false,
+      sdEndpoint: 'http://127.0.0.1:7860',
+      persona: 'blank',
     },
     experimentation: {
       temperature: 0.7,
@@ -28,7 +49,6 @@
     },
     sd: {
       style: 'balanced',
-      endpoint: 'http://127.0.0.1:7860',
       steps: 30,
       width: 768,
       height: 768,
@@ -55,7 +75,42 @@
     }
   }
 
+  function enforceValidation(config) {
+    const normalized = normalizeConfig(config)
+    
+    // Enforce minimum values
+    normalized.sd.steps = Math.max(1, Math.min(60, normalized.sd.steps || 1))
+    normalized.sd.width = Math.max(1, normalized.sd.width || 768)
+    normalized.sd.height = Math.max(1, normalized.sd.height || 768)
+    normalized.sd.cfgScale = Math.max(0.1, Math.min(30, normalized.sd.cfgScale || 3))
+    
+    return normalized
+  }
+
+  function applyAspectRatio(ratio) {
+    if (!lastEditedDimension) return
+    
+    if (lastEditedDimension === 'width') {
+      if (ratio === '1:1') {
+        live.sd.height = live.sd.width
+      } else if (ratio === '3:2') {
+        live.sd.height = Math.floor(live.sd.width * 2 / 3)
+      } else if (ratio === '2:3') {
+        live.sd.height = Math.floor(live.sd.width * 3 / 2)
+      }
+    } else if (lastEditedDimension === 'height') {
+      if (ratio === '1:1') {
+        live.sd.width = live.sd.height
+      } else if (ratio === '3:2') {
+        live.sd.width = Math.floor(live.sd.height * 3 / 2)
+      } else if (ratio === '2:3') {
+        live.sd.width = Math.floor(live.sd.height * 2 / 3)
+      }
+    }
+  }
+
   function handleSave() {
+    live = enforceValidation(live)
     onSave()
   }
 
@@ -63,13 +118,50 @@
     onCancel()
   }
 
+  function handleSaveSd() {
+    live = enforceValidation(live)
+    onSaveSd()
+  }
+
+  function handleCancelSd() {
+    onCancelSd()
+  }
+
+  const selectedPersona = $derived.by(() => {
+    const selectedId = live?.general?.persona || 'blank'
+    const found = personaOptions.find((p) => p.id === selectedId)
+    return found || personaOptions[0] || null
+  })
+
+  const selectedTags = $derived(() => {
+    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return ''
+    return selectedPersona.tags.slice(0, 5).join(', ')
+  })
+
+  // Sync top-level checkboxes with general config
+  $effect.pre(() => {
+    if (live?.general) {
+      auto = live.general.auto ?? false
+      streaming = live.general.streaming ?? true
+      showStats = live.general.showStats ?? false
+    }
+  })
+
+  $effect.pre(() => {
+    if (live?.general) {
+      live.general.auto = auto
+      live.general.streaming = streaming
+      live.general.showStats = showStats
+    }
+  })
+
   $effect.pre(() => {
     if (!live || Object.keys(live).length === 0 || !live.experimentation) {
-      live = normalizeConfig(live)
+      live = enforceValidation(live)
     }
 
     if (!saved || Object.keys(saved).length === 0 || !saved.experimentation) {
-      saved = normalizeConfig(saved)
+      saved = enforceValidation(saved)
     }
 
     isDirty = JSON.stringify(live) !== JSON.stringify(saved)
@@ -122,6 +214,36 @@
   <div class="panel-content">
     {#if activeTab === 'general'}
       <section class="section-body">
+        <div class="subsection-label">Agent Persona</div>
+
+        <div class="persona-panel">
+          <div class="control-group">
+            <label for="persona-select">Persona</label>
+            <select id="persona-select" bind:value={live.general.persona} onchange={() => onPersonaChange(live.general.persona)}>
+              {#each personaOptions as persona}
+                <option value={persona.id}>{persona.name}</option>
+              {/each}
+            </select>
+          </div>
+
+          {#if selectedPersona}
+            <div class="persona-name">{selectedPersona.name}</div>
+
+            <div class="persona-avatar-wrap">
+              {#if selectedPersona.avatarUrl}
+                <img class="persona-avatar" src={selectedPersona.avatarUrl} alt={`${selectedPersona.name} avatar`} width="256" height="256" />
+              {:else}
+                <div class="persona-avatar persona-avatar-placeholder">{selectedPersona.name?.slice(0, 1) || '?'}</div>
+              {/if}
+            </div>
+
+            <div class="persona-description">{selectedPersona.description}</div>
+            <div class="persona-tags">{selectedTags}</div>
+          {/if}
+        </div>
+
+        <hr class="divider" />
+
         <div class="control-group">
           <label for="output-format">Output Format</label>
           <select id="output-format" bind:value={live.general.outputFormat}>
@@ -134,6 +256,34 @@
         <div class="control-group checkbox-row">
           <label for="multiline-replies">Allow Multiline Replies</label>
           <input type="checkbox" id="multiline-replies" bind:checked={live.general.multilineReplies} />
+        </div>
+
+        <hr class="divider" />
+
+        <div class="subsection-label">Workflow</div>
+
+        <div class="control-group checkbox-row">
+          <label for="workflow-auto">Auto Mode</label>
+          <input type="checkbox" id="workflow-auto" bind:checked={auto} />
+        </div>
+
+        <div class="control-group checkbox-row">
+          <label for="workflow-streaming">Streaming</label>
+          <input type="checkbox" id="workflow-streaming" bind:checked={streaming} />
+        </div>
+
+        <div class="control-group checkbox-row">
+          <label for="workflow-stats">Show Stats</label>
+          <input type="checkbox" id="workflow-stats" bind:checked={showStats} />
+        </div>
+
+        <hr class="divider" />
+
+        <div class="subsection-label">Stable Diffusion</div>
+
+        <div class="control-group">
+          <label for="sd-endpoint">SD Endpoint</label>
+          <input id="sd-endpoint" type="text" bind:value={live.general.sdEndpoint} class="wide" />
         </div>
       </section>
     {/if}
@@ -222,36 +372,74 @@
           </select>
         </div>
 
-        <div class="control-group">
-          <label for="sd-endpoint">SD Endpoint</label>
-          <input id="sd-endpoint" type="text" bind:value={live.sd.endpoint} class="wide" />
+        <div class="control-grid two-col">
+          <div class="control-group">
+            <label for="sd-steps">Steps (1-60)</label>
+            <input 
+              id="sd-steps" 
+              type="number" 
+              min="1" 
+              max="60" 
+              bind:value={live.sd.steps}
+              oninput={(e) => { live.sd.steps = Math.max(1, Math.min(60, e.target.value)); }}
+              class="number-input wide" 
+            />
+          </div>
+          <div class="control-group">
+            <label for="sd-cfg">CFG Scale (0.1-30)</label>
+            <input 
+              id="sd-cfg" 
+              type="number" 
+              min="0.1" 
+              max="30" 
+              step="0.5" 
+              bind:value={live.sd.cfgScale}
+              oninput={(e) => { live.sd.cfgScale = Math.max(0.1, Math.min(30, e.target.value)); }}
+              class="number-input wide" 
+            />
+          </div>
         </div>
 
         <div class="control-grid two-col">
           <div class="control-group">
-            <label for="sd-steps">Steps</label>
-            <input id="sd-steps" type="number" min="1" max="150" bind:value={live.sd.steps} class="number-input wide" />
+            <label for="sd-width">Width (>0)</label>
+            <input 
+              id="sd-width" 
+              type="number" 
+              min="1" 
+              step="64" 
+              bind:value={live.sd.width}
+              oninput={(e) => { live.sd.width = Math.max(1, e.target.value); lastEditedDimension = 'width'; }}
+              class="number-input wide" 
+            />
           </div>
           <div class="control-group">
-            <label for="sd-cfg">CFG Scale</label>
-            <input id="sd-cfg" type="number" min="1" max="20" step="0.5" bind:value={live.sd.cfgScale} class="number-input wide" />
+            <label for="sd-height">Height (>0)</label>
+            <input 
+              id="sd-height" 
+              type="number" 
+              min="1" 
+              step="64" 
+              bind:value={live.sd.height}
+              oninput={(e) => { live.sd.height = Math.max(1, e.target.value); lastEditedDimension = 'height'; }}
+              class="number-input wide" 
+            />
           </div>
         </div>
 
-        <div class="control-grid two-col">
-          <div class="control-group">
-            <label for="sd-width">Width</label>
-            <input id="sd-width" type="number" min="256" step="64" bind:value={live.sd.width} class="number-input wide" />
-          </div>
-          <div class="control-group">
-            <label for="sd-height">Height</label>
-            <input id="sd-height" type="number" min="256" step="64" bind:value={live.sd.height} class="number-input wide" />
-          </div>
+        <div class="aspect-ratio-row">
+          <button class="ratio-btn" onclick={() => applyAspectRatio('1:1')}>1:1</button>
+          <button class="ratio-btn" onclick={() => applyAspectRatio('3:2')}>3:2</button>
+          <button class="ratio-btn" onclick={() => applyAspectRatio('2:3')}>2:3</button>
         </div>
 
         <div class="control-group">
           <label for="sd-sampler">Sampler Name</label>
-          <input id="sd-sampler" type="text" bind:value={live.sd.samplerName} class="wide" />
+          <select id="sd-sampler" bind:value={live.sd.samplerName}>
+            {#each samplerOptions as sampler}
+              <option value={sampler}>{sampler}</option>
+            {/each}
+          </select>
         </div>
 
         <div class="control-group">
@@ -352,6 +540,61 @@
     color: #cbd5e1;
   }
 
+  .persona-panel {
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: #0b1220;
+    padding: 0.6rem;
+    display: grid;
+    gap: 0.45rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .persona-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  .persona-avatar-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  .persona-avatar {
+    width: 256px;
+    height: 256px;
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    object-fit: cover;
+    background: #111827;
+  }
+
+  .persona-avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #94a3b8;
+  }
+
+  .persona-description {
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    line-height: 1.3;
+    min-height: 2.2em;
+  }
+
+  .persona-tags {
+    font-size: 0.72rem;
+    color: #60a5fa;
+    border-top: 1px dashed #334155;
+    padding-top: 0.35rem;
+    overflow-wrap: anywhere;
+  }
+
   .input-row {
     display: flex;
     gap: 0.35rem;
@@ -419,6 +662,46 @@
   .btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid #374151;
+    margin: 0.3rem 0;
+  }
+
+  .subsection-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.3rem;
+    padding-top: 0.3rem;
+  }
+
+  .aspect-ratio-row {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .ratio-btn {
+    flex: 1;
+    border: 1px solid #475569;
+    background: #1e293b;
+    color: #cbd5e1;
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .ratio-btn:hover {
+    border-color: #60a5fa;
+    background: #0f172a;
+    color: #93c5fd;
   }
 
   @media (max-width: 980px) {

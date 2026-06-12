@@ -13,13 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from lorebook.characters import infer_character_name, should_replace_character_name
-from lorebook.config.prompts import (
-    CHARACTER_SYSTEM,
-    EDITOR_SYSTEM,
-    LOREMASTER_SYSTEM,
-    REVIEW_SUMMARY_SYSTEM,
-    SD_PROMPT_SYSTEM,
-)
+from lorebook.config.prompts import get_persona_prompts
 from lorebook.config.sd_styles import DEFAULT_SD_STYLE, SD_STYLES
 from lorebook.api.storage import (
     delete_draft_state,
@@ -28,7 +22,6 @@ from lorebook.api.storage import (
     save_draft_state,
     save_run_result,
 )
-from lorebook.graph import build_app
 from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_llm
 from lorebook.state import CharacterState, WizardState
 
@@ -246,6 +239,7 @@ def _run_stage_sync(
 ) -> str:
     config = experimentation_config or {}
     max_length = int(config.get("maxLength", _stage_max_tokens(stage)))
+    prompts = get_persona_prompts(config.get("persona_id", "blank"))
 
     if stage == "loremaster":
         prior_text = state.get("world_setting", "")
@@ -256,7 +250,7 @@ def _run_stage_sync(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
         generated = call_local_llm(
-            LOREMASTER_SYSTEM,
+            prompts.LOREMASTER_SYSTEM,
             prompt,
             max_length=max_length,
         )
@@ -282,7 +276,7 @@ def _run_stage_sync(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = call_local_llm(
-            CHARACTER_SYSTEM,
+            prompts.CHARACTER_SYSTEM,
             prompt,
             max_length=max_length,
         )
@@ -295,7 +289,7 @@ def _run_stage_sync(
                 f"Include: name, physical description, personality, background, skills, and role."
             )
             generated = call_local_llm(
-                CHARACTER_SYSTEM,
+                prompts.CHARACTER_SYSTEM,
                 retry_prompt,
                 max_length=max_length,
             )
@@ -322,7 +316,7 @@ def _run_stage_sync(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = call_local_llm(
-            EDITOR_SYSTEM,
+            prompts.EDITOR_SYSTEM,
             prompt,
             max_length=max_length,
         )
@@ -353,6 +347,7 @@ async def _run_stage_stream(
         experimentation_config = {}
     
     max_length = int(experimentation_config.get("maxLength", _stage_max_tokens(stage)))
+    prompts = get_persona_prompts(experimentation_config.get("persona_id", "blank"))
 
     if await request.is_disconnected():
         return
@@ -369,7 +364,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(LOREMASTER_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             generated += chunk
@@ -397,7 +392,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(CHARACTER_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             generated += chunk
@@ -414,7 +409,7 @@ async def _run_stage_stream(
                 f"Include: name, physical description, personality, background, skills, and role."
             )
             generated = ""
-            for chunk in stream_local_llm(CHARACTER_SYSTEM, retry_prompt, max_length=max_length):
+            for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, retry_prompt, max_length=max_length):
                 if await request.is_disconnected():
                     return
                 generated += chunk
@@ -471,7 +466,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             generated += chunk
@@ -522,7 +517,7 @@ def _outputs_images_dir() -> Path:
     return directory
 
 
-def _make_sd_prompt(state: WizardState, character: CharacterState, prompt_override: str | None = None) -> str:
+def _make_sd_prompt(state: WizardState, character: CharacterState, prompt_override: str | None = None, persona_id: str = "blank") -> str:
     if prompt_override and prompt_override.strip():
         return prompt_override.strip()
 
@@ -531,7 +526,7 @@ def _make_sd_prompt(state: WizardState, character: CharacterState, prompt_overri
         f"Character name: {character.get('name', 'Companion')}\n"
         f"Character details:\n{character.get('details', '')}"
     )
-    generated = call_local_llm(SD_PROMPT_SYSTEM, prompt_input, max_length=256)
+    generated = call_local_llm(get_persona_prompts(persona_id).SD_PROMPT_SYSTEM, prompt_input, max_length=256)
     return generated.strip().replace("\n", " ")
 
 
@@ -753,6 +748,9 @@ async def get_sd_styles() -> Dict[str, Any]:
 async def run_workflow(body: Dict[str, Any]) -> Dict[str, Any]:
     raw_idea: str = body.get("raw_idea", "")
     auto_save: bool = body.get("auto_save", True)
+    experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config = {**experimentation_config, "persona_id": persona_id}
     initial_state: WizardState = {
         "raw_idea": raw_idea,
         "world_setting": "",
@@ -761,14 +759,25 @@ async def run_workflow(body: Dict[str, Any]) -> Dict[str, Any]:
         "passed_inspection": False,
     }
 
-    graph = build_app()
+    state = dict(initial_state)
+    next_stage = "loremaster"
     start = time.monotonic()
-    result = graph.invoke(initial_state, config={"recursion_limit": 10})
+    # Run staged pipeline so persona-aware prompts are respected.
+    for _ in range(8):
+        if next_stage == "save_assets":
+            break
+        next_stage = _run_stage_sync(
+            state,
+            next_stage,
+            experimentation_config=experimentation_config,
+        )
+        if state.get("passed_inspection") and next_stage == "save_assets":
+            break
     elapsed_ms = round((time.monotonic() - start) * 1000)
 
     payload = {
         "raw_idea": raw_idea,
-        "state": dict(result),
+        "state": dict(state),
         "meta": {"elapsed_ms": elapsed_ms},
     }
 
@@ -780,13 +789,13 @@ async def run_workflow(body: Dict[str, Any]) -> Dict[str, Any]:
             "run_id": saved["run_id"],
             "run_path": saved["run_path"],
             "filename": saved["filename"],
-            "state": dict(result),
+            "state": dict(state),
             "meta": {"elapsed_ms": elapsed_ms},
         }
 
     return {
         "pending_save": True,
-        "state": dict(result),
+        "state": dict(state),
         "meta": {"elapsed_ms": elapsed_ms},
     }
 
@@ -799,6 +808,8 @@ async def run_single_step(body: Dict[str, Any]) -> Dict[str, Any]:
     directive: str = str(body.get("directive", ""))
     character_index: int = max(0, int(body.get("character_index", 0)))
     experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config = {**experimentation_config, "persona_id": persona_id}
     state = _normalize_state(raw_idea, body.get("state"))
 
     start = time.monotonic()
@@ -844,6 +855,8 @@ async def run_single_step_stream(body: Dict[str, Any], request: Request) -> Even
     directive: str = str(body.get("directive", ""))
     character_index: int = max(0, int(body.get("character_index", 0)))
     experimentation_config: dict = body.get("experimentation_config", {})
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config = {**experimentation_config, "persona_id": persona_id}
     state = _normalize_state(raw_idea, body.get("state"))
     return EventSourceResponse(
         _run_stage_stream(
@@ -863,6 +876,7 @@ async def generate_review_summary(body: Dict[str, Any]) -> Dict[str, Any]:
     original: str = str(body.get("original", ""))
     revised: str = str(body.get("revised", ""))
     stage: str = str(body.get("stage", ""))
+    persona_id: str = str(body.get("persona_id", "blank"))
 
     if not revised.strip():
         return {
@@ -885,5 +899,5 @@ async def generate_review_summary(body: Dict[str, Any]) -> Dict[str, Any]:
         f"Revised:\n{revised}\n"
     )
 
-    summary = call_local_llm(REVIEW_SUMMARY_SYSTEM, prompt, max_length=360)
+    summary = call_local_llm(get_persona_prompts(persona_id).REVIEW_SUMMARY_SYSTEM, prompt, max_length=360)
     return {"summary": summary.strip()}

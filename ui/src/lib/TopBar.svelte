@@ -1,8 +1,5 @@
 <script>
   let {
-    showStats = $bindable(false),
-    streaming = $bindable(true),
-    auto = $bindable(false),
     meta = {},
     ongraph = () => {},
   } = $props()
@@ -12,22 +9,7 @@
   <span class="brand">Lorebook</span>
 
   <div class="controls">
-    <label class="toggle">
-      <input type="checkbox" bind:checked={auto} />
-      Auto
-    </label>
-
-    <label class="toggle">
-      <input type="checkbox" bind:checked={streaming} />
-      Stream
-    </label>
-
-    <label class="toggle">
-      <input type="checkbox" bind:checked={showStats} />
-      Stats
-    </label>
-
-    {#if showStats && meta.elapsed_ms != null}
+    {#if meta.elapsed_ms != null}
       <span class="stats">{meta.elapsed_ms} ms</span>
     {/if}
 
@@ -57,14 +39,6 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-  }
-
-  .toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.875rem;
-    cursor: pointer;
   }
 
   .stats {

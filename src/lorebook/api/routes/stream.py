@@ -11,26 +11,11 @@ from sse_starlette.sse import EventSourceResponse
 from lorebook.characters import infer_character_name, should_replace_character_name
 from lorebook.api.storage import save_draft_state, save_run_result
 from lorebook.llm import stream_local_llm
+from lorebook.config.prompts import get_persona_prompts
 from lorebook.state import WizardState
 
 router = APIRouter()
 
-
-LOREMASTER_SYSTEM = (
-    "You are an expert world builder. Expand the user's idea into a structured "
-    "setting with 3 distinct world rules."
-)
-
-CHARACTER_SYSTEM = (
-    "You are a SillyTavern character designer. Create 1 main companion character "
-    "based on this world setting. Format as clean text."
-)
-
-EDITOR_SYSTEM = (
-    "You are a critical editor. Review the character design against the world "
-    "setting. If it feels generic or breaks the world rules, write critique. If "
-    "it is excellent, reply exactly with: PASSED."
-)
 
 
 def _empty_state(raw_idea: str) -> WizardState:
@@ -75,9 +60,10 @@ CHARACTER_MAX_TOKENS = _tokens("LOREBOOK_CHARACTER_MAX_TOKENS", 2048)
 EDITOR_MAX_TOKENS = _tokens("LOREBOOK_EDITOR_MAX_TOKENS", 512)
 
 
-async def _event_generator(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: dict | None = None) -> AsyncIterator[Dict[str, str]]:
+async def _event_generator(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: dict | None = None, persona_id: str = "blank") -> AsyncIterator[Dict[str, str]]:
     if experimentation_config is None:
         experimentation_config = {}
+    prompts = get_persona_prompts(persona_id)
     
     state = _empty_state(raw_idea)
     start = time.monotonic()
@@ -95,7 +81,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # loremaster
         yield {"event": "node-start", "data": json.dumps({"node": "loremaster"})}
         world_setting = ""
-        for chunk in stream_local_llm(LOREMASTER_SYSTEM, state["raw_idea"], max_length=max_length):
+        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, state["raw_idea"], max_length=max_length):
             if not await ensure_connected():
                 return
             world_setting += chunk
@@ -112,7 +98,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # character designer
         yield {"event": "node-start", "data": json.dumps({"node": "character_designer"})}
         character_details = ""
-        for chunk in stream_local_llm(CHARACTER_SYSTEM, state["world_setting"], max_length=max_length):
+        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, state["world_setting"], max_length=max_length):
             if not await ensure_connected():
                 return
             character_details += chunk
@@ -147,7 +133,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         yield {"event": "node-start", "data": json.dumps({"node": "editor"})}
         critique_notes = ""
         prompt = _editor_prompt(state)
-        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length):
             if not await ensure_connected():
                 return
             critique_notes += chunk
@@ -234,9 +220,9 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
 
 
 @router.get("/stream")
-async def stream_workflow(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: str = "{}") -> EventSourceResponse:
+async def stream_workflow(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: str = "{}", persona_id: str = "blank") -> EventSourceResponse:
     try:
         config = json.loads(experimentation_config) if experimentation_config else {}
     except json.JSONDecodeError:
         config = {}
-    return EventSourceResponse(_event_generator(raw_idea, request, auto_save=auto_save, experimentation_config=config))
+    return EventSourceResponse(_event_generator(raw_idea, request, auto_save=auto_save, experimentation_config=config, persona_id=persona_id))

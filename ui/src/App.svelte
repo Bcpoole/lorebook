@@ -40,12 +40,17 @@
   let outputReview = $state(null)
   let reviewSummaryRequestId = 0
   let sdStyleOptions = $state(['balanced'])
+  let personaOptions = $state([])
   let imageCompare = $state(null)
+  let showRestoreBanner = $state(true)
+  let restoreBannerHovered = $state(false)
+  let restoreBannerAutoDismissTimer = null
 
   const DEFAULT_EXPERIMENTATION = {
     general: {
       outputFormat: 'markdown',
       multilineReplies: true,
+      persona: 'blank',
     },
     experimentation: {
       temperature: 0.7,
@@ -107,6 +112,7 @@
         general: {
           outputFormat: incoming.outputFormat ?? DEFAULT_EXPERIMENTATION.general.outputFormat,
           multilineReplies: incoming.multilineReplies ?? DEFAULT_EXPERIMENTATION.general.multilineReplies,
+          persona: incoming.persona ?? DEFAULT_EXPERIMENTATION.general.persona,
         },
         experimentation: {
           temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
@@ -157,8 +163,28 @@
   }
 
   function getNextButtonLabel() {
-    if (!nextStage) return 'Next'
-    return `Next: ${stageLabel(nextStage)}`
+    const resolvedNextStage = getResolvedNextStage()
+    if (!resolvedNextStage) return 'Next'
+    return `Next: ${stageLabel(resolvedNextStage)}`
+  }
+
+  function hasNonEmptyStageOutput(stage) {
+    const output = getStageOutputFromState(state, stage)
+    return Boolean(output?.trim())
+  }
+
+  function getFallbackNextStage(stage) {
+    if (stage === 'loremaster') return 'character_designer'
+    if (stage === 'character_designer') return 'editor'
+    if (stage === 'editor') return 'save_assets'
+    return null
+  }
+
+  function getResolvedNextStage() {
+    if (nextStage) return nextStage
+    if (running) return null
+    if (!hasNonEmptyStageOutput(activeAgentTab)) return null
+    return getFallbackNextStage(activeAgentTab)
   }
 
   function freshWorkflowState(rawIdea = '') {
@@ -223,6 +249,7 @@
         stage,
         original: originalText,
         revised: revisedText,
+        persona_id: experimentationLive.general?.persona || 'blank',
       }),
     })
 
@@ -337,6 +364,9 @@
     restoredDraft = source === 'draft' ? payload : null
     outputStale = false
     filename = ''
+    showRestoreBanner = true
+    restoreBannerHovered = false
+    startRestoreBannerAutoDismiss()
     return true
   }
 
@@ -350,6 +380,25 @@
       toastVisible = false
       restoreToastTimer = null
     }, 3000)
+  }
+
+  function startRestoreBannerAutoDismiss() {
+    if (restoreBannerAutoDismissTimer) {
+      clearTimeout(restoreBannerAutoDismissTimer)
+    }
+    restoreBannerAutoDismissTimer = setTimeout(() => {
+      if (!restoreBannerHovered) {
+        showRestoreBanner = false
+      }
+      restoreBannerAutoDismissTimer = null
+    }, 8000)
+  }
+
+  function clearRestoreBannerAutoDismiss() {
+    if (restoreBannerAutoDismissTimer) {
+      clearTimeout(restoreBannerAutoDismissTimer)
+      restoreBannerAutoDismissTimer = null
+    }
   }
 
   async function checkAppHealth() {
@@ -630,7 +679,6 @@
       if (!data?.draft) return
 
       applyRestoredPayload(data.draft, 'draft')
-      showRestoreToast('Restored latest in-progress draft.')
     } catch {
       // Ignore restore failures.
     }
@@ -787,12 +835,48 @@
     }
   }
 
+  async function loadPersonas() {
+    try {
+      const res = await fetch('/api/personas', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      const list = Array.isArray(data) ? data : []
+      personaOptions = list.length > 0 ? list : [{
+        id: 'blank',
+        name: 'Blank',
+        description: 'Unflavoured, direct prompts. No stylistic persona attached.',
+        tags: ['neutral', 'direct', 'structured'],
+        avatarUrl: '/api/personas/blank/avatar',
+      }]
+
+      const selectedId = experimentationLive?.general?.persona || 'blank'
+      if (!personaOptions.some((p) => p.id === selectedId)) {
+        experimentationLive = {
+          ...experimentationLive,
+          general: {
+            ...experimentationLive.general,
+            persona: personaOptions[0].id,
+          },
+        }
+      }
+    } catch {
+      personaOptions = [{
+        id: 'blank',
+        name: 'Blank',
+        description: 'Unflavoured, direct prompts. No stylistic persona attached.',
+        tags: ['neutral', 'direct', 'structured'],
+        avatarUrl: '/api/personas/blank/avatar',
+      }]
+    }
+  }
+
   async function handleRun({ rawIdea }) {
     if (!(await ensureApiReady())) {
       return
     }
 
     stopGeneration(false)
+    clearRestoreBannerAutoDismiss()
     currentRawIdea = rawIdea
     state = freshWorkflowState(rawIdea)
     meta = {}
@@ -802,6 +886,8 @@
     outputStale = false
     filename = ''
     nextStage = null
+    showRestoreBanner = true
+    restoreBannerHovered = false
     clearReview()
     running = true
     activeAgentTab = 'loremaster'
@@ -815,7 +901,8 @@
       const params = new URLSearchParams({ 
         raw_idea: rawIdea, 
         auto_save: 'true',
-        experimentation_config: JSON.stringify(experimentationLive.experimentation)
+        experimentation_config: JSON.stringify(experimentationLive.experimentation),
+        persona_id: experimentationLive.general?.persona || 'blank',
       })
       const es = new EventSource(`/api/stream?${params}`)
       activeEventSource = es
@@ -876,7 +963,11 @@
         const res = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw_idea: rawIdea, auto_save: true }),
+          body: JSON.stringify({
+            raw_idea: rawIdea,
+            auto_save: true,
+            persona_id: experimentationLive.general?.persona || 'blank',
+          }),
           signal: controller.signal,
         })
         const data = await res.json()
@@ -935,6 +1026,7 @@
           directive,
           character_index: characterIndex,
           experimentation_config: experimentationLive.experimentation,
+          persona_id: experimentationLive.general?.persona || 'blank',
         }),
       })
 
@@ -995,6 +1087,7 @@
           directive,
           character_index: characterIndex,
           experimentation_config: experimentationLive.experimentation,
+          persona_id: experimentationLive.general?.persona || 'blank',
         }),
         signal: controller.signal,
       })
@@ -1141,6 +1234,7 @@
           mode,
           style: experimentationLive.sd?.style,
           sd_config: experimentationLive.sd,
+          persona_id: experimentationLive.general?.persona || 'blank',
         }),
       })
 
@@ -1197,9 +1291,10 @@
   }
 
   async function handleNextStage() {
-    if (!nextStage || running) return
+    const resolvedNextStage = getResolvedNextStage()
+    if (!resolvedNextStage || running) return
 
-    if (nextStage === 'save_assets') {
+    if (resolvedNextStage === 'save_assets') {
       activeAgentTab = 'save_assets'
       nextStage = null
       return
@@ -1209,7 +1304,7 @@
       return
     }
 
-    await runManualStage(nextStage)
+    await runManualStage(resolvedNextStage)
   }
 
   async function handleContinue() {
@@ -1306,6 +1401,7 @@
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     await loadExperimentation()
+    await loadPersonas()
     await loadSdStyles()
     await restoreOnLaunch()
     restoreDone = true
@@ -1315,6 +1411,8 @@
   onDestroy(() => {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     window.removeEventListener('beforeunload', handleBeforeUnload)
+
+    clearRestoreBannerAutoDismiss()
 
     if (draftSync) {
       void draftSync.flushNow('destroy')
@@ -1359,16 +1457,36 @@
   </div>
 {/if}
 
-{#if restoredDraft && !outputStale}
-  <div class="restored-banner" role="status" aria-live="polite">
-    <div class="restored-content">
-      <span class="restored-label">📋 Restored Draft</span>
-      <span class="restored-summary">
-        Idea: <strong>{restoredDraft.raw_idea?.substring(0, 60)}{restoredDraft.raw_idea?.length > 60 ? '…' : ''}</strong>
-      </span>
+{#if restoredDraft && !outputStale && showRestoreBanner}
+  <div 
+    class="restored-card" 
+    role="status" 
+    aria-live="polite"
+    onmouseover={() => { restoreBannerHovered = true }}
+    onmouseleave={() => { restoreBannerHovered = false }}
+  >
+    <div class="restored-card-header">
+      <span class="restored-card-label">📋 Restored Draft</span>
+    </div>
+    <div class="restored-card-idea">
+      <strong>{restoredDraft.raw_idea?.substring(0, 80)}{restoredDraft.raw_idea?.length > 80 ? '…' : ''}</strong>
+    </div>
+    <div class="restored-card-actions">
       <button 
-        class="restored-clear-btn"
+        class="restored-card-action continue-btn"
+        title="Continue with restored draft"
         onclick={() => {
+          clearRestoreBannerAutoDismiss()
+          showRestoreBanner = false
+        }}
+      >
+        ▶
+      </button>
+      <button 
+        class="restored-card-action clear-btn"
+        title="Clear draft and start new"
+        onclick={() => {
+          clearRestoreBannerAutoDismiss()
           restoredDraft = null
           outputStale = false
           state = {}
@@ -1381,7 +1499,7 @@
           toastVisible = true
         }}
       >
-        ✕ Clear & Start New
+        🗑
       </button>
     </div>
   </div>
@@ -1418,9 +1536,16 @@
     bind:live={experimentationLive}
     bind:saved={experimentationSaved}
     bind:isDirty={experimentationDirty}
+    bind:auto
+    bind:streaming
+    bind:showStats
     sdStyleOptions={sdStyleOptions}
+    personaOptions={personaOptions}
     onSave={saveExperimentation}
     onCancel={cancelExperimentation}
+    onSaveSd={saveExperimentation}
+    onCancelSd={cancelExperimentation}
+    onPersonaChange={() => saveExperimentation()}
   />
 
   <main>
@@ -1443,7 +1568,7 @@
         {suggesting}
         showNext={!auto}
         nextLabel={getNextButtonLabel()}
-        nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets') || (outputReview && outputReview.stage === activeAgentTab)}
+          nextDisabled={!getResolvedNextStage() || running || (!apiReady() && getResolvedNextStage() !== 'save_assets') || (outputReview && outputReview.stage === activeAgentTab)}
         showContinue={activeAgentTab !== 'save_assets'}
         continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
         llmConnected={apiReady()}
@@ -1546,49 +1671,117 @@
   }
 
   .restored-banner {
-    max-width: 1080px;
-    margin: 0.75rem auto 0;
-    padding: 0.75rem 1rem;
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 320px;
     border: 1px solid #7c3aed;
-    border-left: 6px solid #7c3aed;
-    border-radius: 8px;
+    border-radius: 12px;
     background: #faf5ff;
     color: #5b21b6;
     font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    z-index: 40;
+    animation: slideInUp 0.3s ease-out;
   }
 
-  .restored-content {
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .restored-card {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 320px;
+    border: 1px solid #7c3aed;
+    border-radius: 12px;
+    background: #faf5ff;
+    color: #5b21b6;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    z-index: 40;
+    animation: slideInUp 0.3s ease-out;
+  }
+
+  .restored-card-header {
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+
+  .restored-card-idea {
+    font-size: 0.85rem;
+    color: #6b21a8;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .restored-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  .restored-card-action {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #d8b4fe;
+    border-radius: 6px;
+    background: transparent;
+    color: #7c3aed;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+    justify-content: center;
   }
 
-  .restored-label {
-    font-weight: 700;
-    flex: 0 0 auto;
+  .restored-card-action:hover {
+    background: #f3e8ff;
+    border-color: #7c3aed;
+    transform: scale(1.05);
   }
 
-  .restored-summary {
-    flex: 1 1 auto;
-    min-width: 200px;
-    color: #6b21a8;
-  }
-
-  .restored-clear-btn {
-    flex: 0 0 auto;
-    padding: 0.35rem 0.8rem;
+  .restored-card-action.continue-btn {
     background: #7c3aed;
     color: #fff;
-    border: none;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    cursor: pointer;
+    border-color: #7c3aed;
+    font-size: 0.9rem;
     font-weight: 600;
   }
 
-  .restored-clear-btn:hover {
+  .restored-card-action.continue-btn:hover {
     background: #6d28d9;
+    border-color: #6d28d9;
+    transform: scale(1.08);
+  }
+
+  .restored-card-action.clear-btn {
+    background: #dc2626;
+    color: #fff;
+    border-color: #dc2626;
+    font-weight: 600;
+  }
+
+  .restored-card-action.clear-btn:hover {
+    background: #b91c1c;
+    border-color: #b91c1c;
+    transform: scale(1.08);
   }
 
   .image-compare-modal {
@@ -1666,6 +1859,21 @@
   @media (max-width: 900px) {
     .image-compare-grid {
       grid-template-columns: 1fr;
+    }
+
+    .restored-card {
+      width: 280px;
+      bottom: 1rem;
+      right: 1rem;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .restored-card {
+      width: calc(100% - 2rem);
+      bottom: 1rem;
+      right: 1rem;
+      left: 1rem;
     }
   }
 </style>
