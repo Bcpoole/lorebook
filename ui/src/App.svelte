@@ -4,6 +4,7 @@
   import AgentPanel from './lib/AgentPanel.svelte'
   import TopBar from './lib/TopBar.svelte'
   import Toast from './lib/Toast.svelte'
+  import ExperimentationPanel from './lib/ExperimentationPanel.svelte'
   import { DraftSyncController } from './lib/draftSync'
   import { PollingQueue } from './lib/pollingQueue'
 
@@ -33,6 +34,23 @@
   let restoreToastTimer = null
   let appServerConnected = $state(true)
   let llmConnected = $state(true)
+
+  // Experimentation state
+  let experimentationLive = $state({
+    temperature: 0.7,
+    topP: 0.9,
+    topK: 40,
+    repetitionPenalty: 1.1,
+    maxLength: 512,
+    contextSize: 2048,
+    outputFormat: 'markdown',
+    multilineReplies: true,
+    minP: 0,
+    presencePenalty: 0,
+    samplerSeed: -1,
+  })
+  let experimentationSaved = $state(JSON.parse(JSON.stringify(experimentationLive)))
+  let experimentationDirty = $state(false)
   let llmCountdown = 10
   let llmCountdownDisplay = $state(10)
   let reconnectCountdownTimer = null
@@ -502,6 +520,46 @@
     }
   }
 
+  async function saveExperimentation() {
+    try {
+      const res = await fetch('/api/experimentation/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(experimentationLive),
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to save experimentation config')
+      }
+
+      experimentationSaved = JSON.parse(JSON.stringify(experimentationLive))
+      toastMessage = '⚗️ Experimentation settings saved.'
+      toastVisible = true
+    } catch (error) {
+      toastMessage = `Error saving experimentation: ${error.message}`
+      toastVisible = true
+    }
+  }
+
+  async function cancelExperimentation() {
+    experimentationLive = JSON.parse(JSON.stringify(experimentationSaved))
+    toastMessage = '⚗️ Experimentation settings reverted.'
+    toastVisible = true
+  }
+
+  async function loadExperimentation() {
+    try {
+      const res = await fetch('/api/experimentation/load', { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        experimentationLive = data
+        experimentationSaved = JSON.parse(JSON.stringify(data))
+      }
+    } catch (error) {
+      console.warn('Could not load experimentation config:', error)
+    }
+  }
+
   async function handleRun({ rawIdea }) {
     if (!(await ensureApiReady())) {
       return
@@ -524,7 +582,11 @@
     }
 
     if (streaming) {
-      const params = new URLSearchParams({ raw_idea: rawIdea, auto_save: 'true' })
+      const params = new URLSearchParams({ 
+        raw_idea: rawIdea, 
+        auto_save: 'true',
+        experimentation_config: JSON.stringify(experimentationLive)
+      })
       const es = new EventSource(`/api/stream?${params}`)
       activeEventSource = es
 
@@ -682,6 +744,7 @@
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
+          experimentation_config: experimentationLive,
         }),
         signal: controller.signal,
       })
@@ -900,6 +963,7 @@
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('beforeunload', handleBeforeUnload)
 
+    await loadExperimentation()
     await restoreOnLaunch()
     restoreDone = true
     startLlmHeartbeat()
@@ -954,54 +1018,69 @@
 
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
-<main>
-  <RawIdeaForm {running} llmConnected={apiReady()} bind:rawIdea={currentRawIdea} onrun={handleRun} />
+<div class="app-container">
+  <ExperimentationPanel
+    bind:live={experimentationLive}
+    bind:saved={experimentationSaved}
+    bind:isDirty={experimentationDirty}
+    onSave={saveExperimentation}
+    onCancel={cancelExperimentation}
+  />
 
-  {#if activeTab === 'agents'}
-    <AgentPanel
-      bind:workflowState={state}
-      {running}
-      bind:activeAgent={activeAgentTab}
-      {pendingSave}
-      {savedRun}
-      bind:filename
-      {suggesting}
-      showNext={!auto}
-      nextLabel={getNextButtonLabel()}
-      nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets')}
-      showStop={running}
-      showContinue={activeAgentTab !== 'save_assets'}
-      continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
-      llmConnected={apiReady()}
-      onnext={handleNextStage}
-      onstop={handleStopGeneration}
-      oncontinue={handleContinue}
-      onsave={handleSave}
-      onsuggestname={handleSuggestName}
-      onrandomname={handleRandomName}
-      onrunmodule={handleModuleRun}
-      oncharacterimage={handleCharacterImageGenerate}
-    />
-  {:else if activeTab === 'graph'}
-    <div class="graph-section">
-      <button class="back-btn" onclick={() => (activeTab = 'agents')}>← Back</button>
-      {#if graphPanelLoad}
-        {#await graphPanelLoad}
+  <main>
+    <RawIdeaForm {running} llmConnected={apiReady()} bind:rawIdea={currentRawIdea} onrun={handleRun} />
+
+    {#if activeTab === 'agents'}
+      <AgentPanel
+        bind:workflowState={state}
+        {running}
+        bind:activeAgent={activeAgentTab}
+        {pendingSave}
+        {savedRun}
+        bind:filename
+        {suggesting}
+        showNext={!auto}
+        nextLabel={getNextButtonLabel()}
+        nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets')}
+        showStop={running}
+        showContinue={activeAgentTab !== 'save_assets'}
+        continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
+        llmConnected={apiReady()}
+        onnext={handleNextStage}
+        onstop={handleStopGeneration}
+        oncontinue={handleContinue}
+        onsave={handleSave}
+        onsuggestname={handleSuggestName}
+        onrandomname={handleRandomName}
+        onrunmodule={handleModuleRun}
+        oncharacterimage={handleCharacterImageGenerate}
+      />
+    {:else if activeTab === 'graph'}
+      <div class="graph-section">
+        <button class="back-btn" onclick={() => (activeTab = 'agents')}>← Back</button>
+        {#if graphPanelLoad}
+          {#await graphPanelLoad}
+            <p class="loading">Loading graph…</p>
+          {:then module}
+            {@const GraphPanel = module.default}
+            <GraphPanel />
+          {:catch error}
+            <p class="error">Failed to load graph: {error.message}</p>
+          {/await}
+        {:else}
           <p class="loading">Loading graph…</p>
-        {:then module}
-          {@const GraphPanel = module.default}
-          <GraphPanel />
-        {:catch error}
-          <p class="error">Failed to load graph: {error.message}</p>
-        {/await}
-      {:else}
-        <p class="loading">Loading graph…</p>
-      {/if}
-    </div>
-  {/if}
-</main>
+        {/if}
+      </div>
+    {/if}
+  </main>
+</div>
 
 <style>
+  .app-container {
+    display: flex;
+    height: 100vh;
+  }
+
   .llm-alert {
     max-width: 1080px;
     margin: 0.75rem auto 0;
@@ -1015,10 +1094,15 @@
   }
 
   main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
     max-width: 1080px;
     margin: 0 auto;
     padding: 1rem;
     font-family: system-ui, sans-serif;
+    width: 100%;
   }
 
   .graph-section {

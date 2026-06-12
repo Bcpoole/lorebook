@@ -241,8 +241,15 @@ async def _run_stage_stream(
     continue_output: bool = False,
     directive: str = "",
     character_index: int = 0,
+    experimentation_config: dict | None = None,
 ) -> AsyncIterator[Dict[str, str]]:
     start = time.monotonic()
+    
+    if experimentation_config is None:
+        experimentation_config = {}
+    
+    # Extract max_length from experimentation config, fallback to stage defaults
+    max_length = experimentation_config.get("maxLength", 512)
 
     if await request.is_disconnected():
         return
@@ -259,7 +266,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         text = prior_text if continue_output else ""
-        for chunk in stream_local_llm(LOREMASTER_SYSTEM, prompt, max_length=LOREMASTER_MAX_TOKENS):
+        for chunk in stream_local_llm(LOREMASTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             text += chunk
@@ -285,7 +292,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         details = prior_details if continue_output else ""
-        for chunk in stream_local_llm(CHARACTER_SYSTEM, prompt, max_length=CHARACTER_MAX_TOKENS):
+        for chunk in stream_local_llm(CHARACTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             details += chunk
@@ -338,7 +345,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         critique = prior_critique if continue_output else ""
-        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=EDITOR_MAX_TOKENS):
+        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
             critique += chunk
@@ -636,6 +643,7 @@ async def run_single_step_stream(body: Dict[str, Any], request: Request) -> Even
     continue_output: bool = bool(body.get("continue_output", False))
     directive: str = str(body.get("directive", ""))
     character_index: int = max(0, int(body.get("character_index", 0)))
+    experimentation_config: dict = body.get("experimentation_config", {})
     state = _normalize_state(raw_idea, body.get("state"))
     return EventSourceResponse(
         _run_stage_stream(
@@ -645,5 +653,6 @@ async def run_single_step_stream(body: Dict[str, Any], request: Request) -> Even
             continue_output=continue_output,
             directive=directive,
             character_index=character_index,
+            experimentation_config=experimentation_config,
         )
     )

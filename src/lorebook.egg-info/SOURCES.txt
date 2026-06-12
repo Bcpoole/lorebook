@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/lorebook/__init__.py
 src/lorebook/__main__.py
+src/lorebook/characters.py
 src/lorebook/cli.py
 src/lorebook/graph.py
 src/lorebook/llm.py
@@ -12,4 +13,17 @@ src/lorebook.egg-info/SOURCES.txt
 src/lorebook.egg-info/dependency_links.txt
 src/lorebook.egg-info/requires.txt
 src/lorebook.egg-info/top_level.txt
+src/lorebook/api/__init__.py
+src/lorebook/api/app.py
+src/lorebook/api/storage.py
+src/lorebook/api/routes/__init__.py
+src/lorebook/api/routes/experimentation.py
+src/lorebook/api/routes/graph.py
+src/lorebook/api/routes/run.py
+src/lorebook/api/routes/save.py
+src/lorebook/api/routes/stream.py
+tests/test_api_integration.py
+tests/test_experimentation.py
+tests/test_nodes_fixtures.py
 tests/test_smoke.py
+tests/test_storage.py

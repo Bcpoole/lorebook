@@ -75,9 +75,15 @@ CHARACTER_MAX_TOKENS = _tokens("LOREBOOK_CHARACTER_MAX_TOKENS", 2048)
 EDITOR_MAX_TOKENS = _tokens("LOREBOOK_EDITOR_MAX_TOKENS", 512)
 
 
-async def _event_generator(raw_idea: str, request: Request, auto_save: bool = True) -> AsyncIterator[Dict[str, str]]:
+async def _event_generator(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: dict | None = None) -> AsyncIterator[Dict[str, str]]:
+    if experimentation_config is None:
+        experimentation_config = {}
+    
     state = _empty_state(raw_idea)
     start = time.monotonic()
+    
+    # Extract max_length from experimentation config, fallback to stage defaults
+    max_length = experimentation_config.get("maxLength", 512)
 
     async def ensure_connected() -> bool:
         return not await request.is_disconnected()
@@ -89,7 +95,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # loremaster
         yield {"event": "node-start", "data": json.dumps({"node": "loremaster"})}
         world_setting = ""
-        for chunk in stream_local_llm(LOREMASTER_SYSTEM, state["raw_idea"], max_length=LOREMASTER_MAX_TOKENS):
+        for chunk in stream_local_llm(LOREMASTER_SYSTEM, state["raw_idea"], max_length=max_length):
             if not await ensure_connected():
                 return
             world_setting += chunk
@@ -106,7 +112,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # character designer
         yield {"event": "node-start", "data": json.dumps({"node": "character_designer"})}
         character_details = ""
-        for chunk in stream_local_llm(CHARACTER_SYSTEM, state["world_setting"], max_length=CHARACTER_MAX_TOKENS):
+        for chunk in stream_local_llm(CHARACTER_SYSTEM, state["world_setting"], max_length=max_length):
             if not await ensure_connected():
                 return
             character_details += chunk
@@ -141,7 +147,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         yield {"event": "node-start", "data": json.dumps({"node": "editor"})}
         critique_notes = ""
         prompt = _editor_prompt(state)
-        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=EDITOR_MAX_TOKENS):
+        for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=max_length):
             if not await ensure_connected():
                 return
             critique_notes += chunk
@@ -228,5 +234,9 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
 
 
 @router.get("/stream")
-async def stream_workflow(raw_idea: str, request: Request, auto_save: bool = True) -> EventSourceResponse:
-    return EventSourceResponse(_event_generator(raw_idea, request, auto_save=auto_save))
+async def stream_workflow(raw_idea: str, request: Request, auto_save: bool = True, experimentation_config: str = "{}") -> EventSourceResponse:
+    try:
+        config = json.loads(experimentation_config) if experimentation_config else {}
+    except json.JSONDecodeError:
+        config = {}
+    return EventSourceResponse(_event_generator(raw_idea, request, auto_save=auto_save, experimentation_config=config))
