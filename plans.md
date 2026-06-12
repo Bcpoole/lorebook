@@ -2,12 +2,10 @@
 
 ## Experimentation
 
-experiment collaspible left menu
+experiment collapsible left menu
 
 - show different prompts and responses, allow tweaking and saving prompts, A/B testing, etc. Examples:
-    - temperature and top_p variations
-    - prompt template variations (some type of substition mechanism to swap out different prompt versions and test them against each other)
-    - allow to set seed, but default to `9111993` for reproducibility
+    - prompt template variations (some type of substitution mechanism to swap out different prompt versions and test them against each other)
 
 ## Pretty + Advanced
 

@@ -9,13 +9,19 @@ $api = Start-Process -NoNewWindow -PassThru -FilePath $python `
   -WorkingDirectory $root
 
 Write-Host "Starting Vite on http://localhost:5173 ..."
-$vite = Start-Process -NoNewWindow -PassThru -FilePath "npm" `
+$vite = Start-Process -NoNewWindow -PassThru -FilePath "npm.cmd" `
   -ArgumentList "run", "dev" `
   -WorkingDirectory $ui
 
 Write-Host "Both servers running. Press Ctrl+C to stop."
 try {
-  Wait-Process -Id $api.Id, $vite.Id
+  $apiId = $api.Id
+  $viteId = $vite.Id
+  if ($apiId -le 0 -or $viteId -le 0) {
+    Write-Error "Failed to launch one or both servers. API PID: $apiId, Vite PID: $viteId"
+    exit 1
+  }
+  Wait-Process -Id $apiId, $viteId
 }
 finally {
   Stop-Process -Id $api.Id -ErrorAction SilentlyContinue

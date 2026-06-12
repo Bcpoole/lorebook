@@ -130,6 +130,22 @@
     return ''
   }
 
+  function extractCharacterHook(details) {
+    if (!details || typeof details !== 'string') return ''
+    const lines = details.split('\n').map(l => l.trim()).filter(l => l)
+    for (const line of lines) {
+      if (line.startsWith('#') || line.startsWith('**')) continue
+      if (line.length > 10 && line.length < 120) {
+        return line.replace(/[*_`]/g, '').substring(0, 100)
+      }
+    }
+    return ''
+  }
+
+  function isCharacterLoading(index) {
+    return running && lastNode === 'character_designer' && index === selectedCharacterIndex
+  }
+
   function openImageModal(character, fallbackTitle) {
     const src = imageSrc(character)
     if (!src) return
@@ -276,7 +292,19 @@
           {@const isCollapsed = Boolean(collapsed[index])}
           {@const isSelected = selectedCharacterIndex === index}
           {@const headerImg = imageSrc(character)}
-          <article class="character-card" class:selected={isSelected}>
+          {@const hook = extractCharacterHook(character.details)}
+          {@const isLoading = isCharacterLoading(index)}
+          <article class="character-card" class:selected={isSelected} class:sticky={isSelected}>
+            {#if !isCollapsed && !isLoading}
+              <div class="character-compact-header">
+                <div class="compact-info">
+                  <span class="compact-name">{character.name || `Character ${index + 1}`}</span>
+                  {#if hook}
+                    <span class="compact-hook">{hook}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
             <header class="character-header">
               <button class="collapse-btn" onclick={() => toggleCollapse(index)} title={isCollapsed ? 'Expand' : 'Collapse'}>
                 {isCollapsed ? '▸' : '▾'}
@@ -346,7 +374,15 @@
                 </div>
 
                 <div class="details-panel">
-                  {#if editingCharacterIndex === index}
+                  {#if isLoading}
+                    <div class="skeleton-loader">
+                      <div class="skeleton-line skeleton-title"></div>
+                      <div class="skeleton-line skeleton-long"></div>
+                      <div class="skeleton-line"></div>
+                      <div class="skeleton-line"></div>
+                      <div class="skeleton-line skeleton-short"></div>
+                    </div>
+                  {:else if editingCharacterIndex === index}
                     <textarea class="edit-area" bind:value={characterDraft}></textarea>
                     <div class="inline-actions">
                       <button class="confirm-btn" onclick={() => confirmEditCharacter(index)}>✔ Done</button>
@@ -361,7 +397,10 @@
           </article>
         {/each}
       {:else}
-        <p class="empty">No characters yet. Add one to begin.</p>
+        <div class="empty-state">
+          <p class="empty">No characters yet.</p>
+          <button class="add-char-btn" onclick={addCharacter} disabled={running}>+ Generate First Character</button>
+        </div>
       {/if}
 
       {#if confirmDeleteIndex !== null}
@@ -655,6 +694,42 @@
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
   }
 
+  .character-card.sticky {
+    position: sticky;
+    top: 0.5rem;
+    z-index: 10;
+  }
+
+  .character-compact-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(135deg, #f0f9ff 0%, #eff6ff 100%);
+    border-bottom: 1px solid #bfdbfe;
+  }
+
+  .compact-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .compact-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1e40af;
+  }
+
+  .compact-hook {
+    font-size: 0.8rem;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .character-header {
     display: flex;
     align-items: center;
@@ -806,6 +881,60 @@
   .passed { color: #16a34a; font-weight: 700; }
   .failed { color: #dc2626; font-weight: 700; }
   .empty { color: #94a3b8; font-style: italic; }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 1.5rem;
+    text-align: center;
+    background: #f9fafb;
+    border: 2px dashed #d1d5db;
+    border-radius: 12px;
+  }
+
+  .empty-state .empty {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .empty-state .add-char-btn {
+    margin: 0;
+  }
+
+  .skeleton-loader {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 1rem;
+  }
+
+  .skeleton-line {
+    height: 1rem;
+    background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 50%, #e5e7eb 100%);
+    background-size: 200% 100%;
+    border-radius: 6px;
+    animation: shimmer 2s infinite;
+  }
+
+  .skeleton-title {
+    height: 1.4rem;
+    width: 60%;
+  }
+
+  .skeleton-long {
+    width: 100%;
+  }
+
+  .skeleton-short {
+    width: 40%;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 
   .save-card {
     border: 1px solid #cbd5e1;

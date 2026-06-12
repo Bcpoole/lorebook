@@ -34,6 +34,8 @@
   let restoreToastTimer = null
   let appServerConnected = $state(true)
   let llmConnected = $state(true)
+  let restoredDraft = $state(null)
+  let outputStale = $state(false)
 
   // Experimentation state
   let experimentationLive = $state({
@@ -113,8 +115,10 @@
 
   function getStageFromState(localState, savePending = false) {
     if (savePending) return 'save_assets'
-    // On restore, keep navigation predictable by landing on Loremaster.
-    // Users can still switch tabs manually.
+    // On restore, land on the stage where progress exists
+    if (localState?.critique_notes) return 'editor'
+    if (localState?.characters?.length) return 'character_designer'
+    if (localState?.world_setting) return 'loremaster'
     return 'loremaster'
   }
 
@@ -132,6 +136,8 @@
     } : null
     nextStage = payload.meta?.next_stage ?? null
     activeAgentTab = getStageFromState(state, Boolean(payload.save_pending))
+    restoredDraft = source === 'draft' ? payload : null
+    outputStale = false
     filename = ''
     return true
   }
@@ -571,6 +577,8 @@
     meta = {}
     pendingSave = null
     savedRun = null
+    restoredDraft = null
+    outputStale = false
     filename = ''
     nextStage = null
     running = true
@@ -603,6 +611,10 @@
       es.addEventListener('node-complete', (e) => {
         const { node, output } = JSON.parse(e.data)
         state = { ...state, ...output, _lastNode: node }
+        // Auto-switch to the stage that just completed for better UX
+        if (node === 'loremaster' || node === 'character_designer' || node === 'editor') {
+          activeAgentTab = node
+        }
       })
 
       es.addEventListener('save-pending', (e) => {
@@ -699,6 +711,7 @@
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
+          experimentation_config: experimentationLive,
         }),
       })
 
@@ -712,6 +725,9 @@
       state = { ...data.state, _lastNode: stage }
       meta = data.meta
       nextStage = data.next_stage ?? null
+      
+      // Auto-switch to the stage that just ran so output is visible
+      activeAgentTab = stage
 
       if (data.save_pending) {
         pendingSave = { raw_idea: currentRawIdea, state: data.state, meta: data.meta }
@@ -780,10 +796,16 @@
           state = applyStreamingChunk(payload.node, payload.chunk)
         } else if (eventName === 'node-complete') {
           state = { ...state, ...payload.output, _lastNode: payload.node }
+          // Auto-switch to the stage that just completed for better UX
+          if (payload.node === 'loremaster' || payload.node === 'character_designer' || payload.node === 'editor') {
+            activeAgentTab = payload.node
+          }
         } else if (eventName === 'step-complete') {
           state = { ...payload.state, _lastNode: stage }
           meta = payload.meta ?? {}
           nextStage = payload.next_stage ?? null
+          // Auto-switch after manual stage run
+          activeAgentTab = stage
           if (payload.save_pending) {
             pendingSave = { raw_idea: currentRawIdea, state: payload.state, meta: payload.meta ?? {} }
             await setSmartFilename(currentRawIdea)
@@ -1016,6 +1038,34 @@
   </div>
 {/if}
 
+{#if restoredDraft && !outputStale}
+  <div class="restored-banner" role="status" aria-live="polite">
+    <div class="restored-content">
+      <span class="restored-label">📋 Restored Draft</span>
+      <span class="restored-summary">
+        Idea: <strong>{restoredDraft.raw_idea?.substring(0, 60)}{restoredDraft.raw_idea?.length > 60 ? '…' : ''}</strong>
+      </span>
+      <button 
+        class="restored-clear-btn"
+        onclick={() => {
+          restoredDraft = null
+          outputStale = false
+          state = {}
+          meta = {}
+          currentRawIdea = ''
+          pendingSave = null
+          savedRun = null
+          activeAgentTab = 'loremaster'
+          toastMessage = 'Draft cleared. Ready for new run.'
+          toastVisible = true
+        }}
+      >
+        ✕ Clear & Start New
+      </button>
+    </div>
+  </div>
+{/if}
+
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <div class="app-container">
@@ -1136,5 +1186,51 @@
 
   .error {
     color: #dc2626;
+  }
+
+  .restored-banner {
+    max-width: 1080px;
+    margin: 0.75rem auto 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid #7c3aed;
+    border-left: 6px solid #7c3aed;
+    border-radius: 8px;
+    background: #faf5ff;
+    color: #5b21b6;
+    font-size: 0.9rem;
+  }
+
+  .restored-content {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .restored-label {
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+
+  .restored-summary {
+    flex: 1 1 auto;
+    min-width: 200px;
+    color: #6b21a8;
+  }
+
+  .restored-clear-btn {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.8rem;
+    background: #7c3aed;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .restored-clear-btn:hover {
+    background: #6d28d9;
   }
 </style>

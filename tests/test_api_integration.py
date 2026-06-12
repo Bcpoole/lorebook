@@ -211,3 +211,54 @@ def test_draft_endpoint_can_clear_latest_draft() -> None:
     assert payload["ok"] is True
     assert payload["cleared"] is True
     assert storage.load_draft_state() is None
+
+
+def test_character_designer_rejects_meta_responses(monkeypatch) -> None:
+    """Verify character_designer guardrail retries on meta responses like 'I understand...'."""
+    from lorebook.api.routes import run as run_routes
+
+    calls = {"count": 0, "prompts": []}
+
+    def fake_llm(system_prompt: str, user_prompt: str, **kwargs) -> str:
+        _ = system_prompt
+        calls["count"] += 1
+        calls["prompts"].append(user_prompt[:100])
+        # First call returns meta response, second call returns real character
+        if calls["count"] == 1:
+            return "I understand the world rules. Please provide instructions for the character design."
+        return "# Character: Test Hero\n\nA brave and noble companion with a strong sense of duty."
+
+    monkeypatch.setattr(run_routes, "call_local_llm", fake_llm)
+
+    client = TestClient(create_app())
+
+    state_with_world = {
+        "raw_idea": "test idea",
+        "world_setting": "A mystical realm with ancient rules.",
+        "characters": [],
+        "critique_notes": "",
+        "passed_inspection": False,
+    }
+
+    res = client.post(
+        "/api/step",
+        json={
+            "raw_idea": "test idea",
+            "state": state_with_world,
+            "stage": "character_designer",
+            "continue_output": False,
+            "directive": "",
+            "character_index": 0,
+        },
+    )
+
+    assert res.status_code == 200
+    payload = res.json()
+    
+    # Should have called LLM twice (initial + retry after meta rejection)
+    assert calls["count"] == 2
+    
+    # Character details should be from successful second call, not meta response
+    character_details = payload["state"]["characters"][0]["details"]
+    assert "I understand" not in character_details
+    assert "Character: Test Hero" in character_details or "brave and noble" in character_details

@@ -32,9 +32,10 @@ LOREMASTER_SYSTEM = (
 )
 
 CHARACTER_SYSTEM = (
-    "You are a SillyTavern character designer. Create or refine exactly one companion "
-    "character based on this world setting and the provided instruction. "
-    "Output only the character details content."
+    "You are a SillyTavern character designer. Create exactly one companion character "
+    "based on this world setting. Output a complete character sheet with name, appearance, "
+    "personality, background, and role in the world. Be concrete and vivid. "
+    "Start with the character name, then describe their details."
 )
 
 EDITOR_SYSTEM = (
@@ -140,6 +141,59 @@ def _continuation_prompt(stage: str, state: WizardState, directive: str = "", ch
     return ""
 
 
+def _stage_max_tokens(stage: str) -> int:
+    if stage == "loremaster":
+        return LOREMASTER_MAX_TOKENS
+    if stage == "character_designer":
+        return CHARACTER_MAX_TOKENS
+    if stage == "editor":
+        return EDITOR_MAX_TOKENS
+    return LOREMASTER_MAX_TOKENS
+
+
+def _is_meta_response(text: str) -> bool:
+    """Detect if response is meta/instruction rather than content (e.g., 'I understand...')."""
+    if not text or len(text) < 10:
+        return False
+    lower = text.lower()
+    meta_markers = [
+        "i understand",
+        "i'm ready",
+        "please provide",
+        "please give",
+        "please specify",
+        "what would",
+        "how should",
+        "would you like",
+        "i need",
+        "can you",
+    ]
+    return any(lower.startswith(marker) for marker in meta_markers)
+
+
+def _continuation_addition(prior: str, generated: str) -> str:
+    """Strip duplicated leading text when a continuation restarts from the top."""
+    if not prior or not generated:
+        return generated
+
+    # Case 1: model restarted from the beginning of the previous draft.
+    if generated.startswith(prior):
+        return generated[len(prior) :]
+
+    # Case 2: model started near the prior cutoff; remove suffix/prefix overlap.
+    max_overlap = min(len(prior), len(generated))
+    for size in range(max_overlap, 0, -1):
+        if prior.endswith(generated[:size]):
+            return generated[size:]
+
+    # Case 3: model restarted from an early prefix of the prior draft.
+    for size in range(max_overlap, 0, -1):
+        if prior.startswith(generated[:size]):
+            return generated[size:]
+
+    return generated
+
+
 def _next_stage_from_editor(state: WizardState) -> str:
     return "save_assets" if state.get("passed_inspection") else "loremaster"
 
@@ -164,20 +218,26 @@ def _run_stage_sync(
     continue_output: bool = False,
     directive: str = "",
     character_index: int = 0,
+    experimentation_config: dict[str, Any] | None = None,
 ) -> str:
+    config = experimentation_config or {}
+    max_length = int(config.get("maxLength", _stage_max_tokens(stage)))
+
     if stage == "loremaster":
+        prior_text = state.get("world_setting", "")
         if continue_output:
             prompt = _continuation_prompt(stage, state, directive=directive)
         else:
             prompt = state["raw_idea"]
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
-        addition = call_local_llm(
+        generated = call_local_llm(
             LOREMASTER_SYSTEM,
             prompt,
-            max_length=LOREMASTER_MAX_TOKENS,
+            max_length=max_length,
         )
-        state["world_setting"] = f"{state.get('world_setting', '')}{addition}" if continue_output else addition
+        addition = _continuation_addition(prior_text, generated) if continue_output else generated
+        state["world_setting"] = f"{prior_text}{addition}" if continue_output else addition
         return "character_designer"
 
     if stage == "character_designer":
@@ -196,11 +256,26 @@ def _run_stage_sync(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
-        addition = call_local_llm(
+        generated = call_local_llm(
             CHARACTER_SYSTEM,
             prompt,
-            max_length=CHARACTER_MAX_TOKENS,
+            max_length=max_length,
         )
+        
+        # Guardrail: reject meta responses and retry with stronger instruction
+        if not continue_output and _is_meta_response(generated):
+            retry_prompt = (
+                f"{state['world_setting']}\n\n"
+                f"Create a detailed character card for a companion in this world. "
+                f"Include: name, physical description, personality, background, skills, and role."
+            )
+            generated = call_local_llm(
+                CHARACTER_SYSTEM,
+                retry_prompt,
+                max_length=max_length,
+            )
+        
+        addition = _continuation_addition(current_details, generated) if continue_output else generated
         details = f"{current_details}{addition}" if continue_output else addition
         state["characters"] = _upsert_character(state, character_index, details)
         return "editor"
@@ -220,11 +295,13 @@ def _run_stage_sync(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
-        addition = call_local_llm(
+        generated = call_local_llm(
             EDITOR_SYSTEM,
             prompt,
-            max_length=EDITOR_MAX_TOKENS,
+            max_length=max_length,
         )
+        prior_critique = state.get("critique_notes", "")
+        addition = _continuation_addition(prior_critique, generated) if continue_output else generated
         critique = f"{state.get('critique_notes', '')}{addition}" if continue_output else addition
         passed = "PASSED" in critique
         state["passed_inspection"] = passed
@@ -248,8 +325,7 @@ async def _run_stage_stream(
     if experimentation_config is None:
         experimentation_config = {}
     
-    # Extract max_length from experimentation config, fallback to stage defaults
-    max_length = experimentation_config.get("maxLength", 512)
+    max_length = int(experimentation_config.get("maxLength", _stage_max_tokens(stage)))
 
     if await request.is_disconnected():
         return
@@ -265,12 +341,14 @@ async def _run_stage_stream(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
-        text = prior_text if continue_output else ""
+        generated = ""
         for chunk in stream_local_llm(LOREMASTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
-            text += chunk
+            generated += chunk
             yield {"event": "node-token", "data": json.dumps({"node": stage, "chunk": chunk})}
+        addition = _continuation_addition(prior_text, generated) if continue_output else generated
+        text = f"{prior_text}{addition}" if continue_output else addition
         state["world_setting"] = text
         next_stage = "character_designer"
         output = {"world_setting": text}
@@ -291,15 +369,35 @@ async def _run_stage_stream(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
-        details = prior_details if continue_output else ""
+        generated = ""
         for chunk in stream_local_llm(CHARACTER_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
-            details += chunk
+            generated += chunk
             yield {
                 "event": "node-token",
                 "data": json.dumps({"node": stage, "chunk": chunk}),
             }
+        
+        # Guardrail: reject meta responses and retry with stronger instruction
+        if not continue_output and _is_meta_response(generated):
+            retry_prompt = (
+                f"{state['world_setting']}\n\n"
+                f"Create a detailed character card for a companion in this world. "
+                f"Include: name, physical description, personality, background, skills, and role."
+            )
+            generated = ""
+            for chunk in stream_local_llm(CHARACTER_SYSTEM, retry_prompt, max_length=max_length):
+                if await request.is_disconnected():
+                    return
+                generated += chunk
+                yield {
+                    "event": "node-token",
+                    "data": json.dumps({"node": stage, "chunk": chunk}),
+                }
+        
+        addition = _continuation_addition(prior_details, generated) if continue_output else generated
+        details = f"{prior_details}{addition}" if continue_output else addition
         state["characters"] = _upsert_character(state, character_index, details)
         next_stage = "editor"
         output = {"characters": state["characters"]}
@@ -344,12 +442,14 @@ async def _run_stage_stream(
             if directive.strip():
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
-        critique = prior_critique if continue_output else ""
+        generated = ""
         for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=max_length):
             if await request.is_disconnected():
                 return
-            critique += chunk
+            generated += chunk
             yield {"event": "node-token", "data": json.dumps({"node": stage, "chunk": chunk})}
+        addition = _continuation_addition(prior_critique, generated) if continue_output else generated
+        critique = f"{prior_critique}{addition}" if continue_output else addition
         passed = "PASSED" in critique
         state["passed_inspection"] = passed
         state["critique_notes"] = critique
@@ -600,6 +700,7 @@ async def run_single_step(body: Dict[str, Any]) -> Dict[str, Any]:
     continue_output: bool = bool(body.get("continue_output", False))
     directive: str = str(body.get("directive", ""))
     character_index: int = max(0, int(body.get("character_index", 0)))
+    experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
     state = _normalize_state(raw_idea, body.get("state"))
 
     start = time.monotonic()
@@ -610,6 +711,7 @@ async def run_single_step(body: Dict[str, Any]) -> Dict[str, Any]:
         continue_output=continue_output,
         directive=directive,
         character_index=character_index,
+        experimentation_config=experimentation_config,
     )
 
     elapsed_ms = round((time.monotonic() - start) * 1000)
