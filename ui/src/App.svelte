@@ -1,9 +1,11 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import RawIdeaForm from './lib/RawIdeaForm.svelte'
   import AgentPanel from './lib/AgentPanel.svelte'
   import TopBar from './lib/TopBar.svelte'
   import Toast from './lib/Toast.svelte'
+  import { DraftSyncController } from './lib/draftSync'
+  import { PollingQueue } from './lib/pollingQueue'
 
   let state = $state({})
   let meta = $state({})
@@ -26,8 +28,34 @@
   let activeEventSource = $state(null)
   let activeAbortController = $state(null)
   let restoreDone = $state(false)
-  let draftPersistTimer = null
+  let draftSync = null
+  let pollingQueue = null
   let restoreToastTimer = null
+  let appServerConnected = $state(true)
+  let llmConnected = $state(true)
+  let llmCountdown = 10
+  let llmCountdownDisplay = $state(10)
+  let reconnectCountdownTimer = null
+  let appHealthInFlight = false
+  let heartbeatInFlight = false
+  let perfObserver = null
+  let perfDebugEnabled = false
+  let perfStats = $state({
+    autosaveCount: 0,
+    autosaveMaxMs: 0,
+    autosaveMaxBytes: 0,
+    autosaveMaxSerializeMs: 0,
+    longTaskCount: 0,
+    longTaskMaxMs: 0,
+  })
+
+  const APP_HEALTH_POLL_SECONDS = 5
+  const HEALTH_POLL_SECONDS = 20
+  const RECONNECT_SECONDS = 10
+
+  function apiReady() {
+    return appServerConnected && llmConnected
+  }
 
   function generateDefaultFilename() {
     return crypto.randomUUID().replace(/-/g, '')
@@ -102,31 +130,274 @@
     }, 3000)
   }
 
-  function scheduleDraftPersist() {
-    if (!restoreDone) return
-    if (draftPersistTimer) {
-      clearTimeout(draftPersistTimer)
+  async function checkAppHealth() {
+    if (appHealthInFlight) return appServerConnected
+    appHealthInFlight = true
+    try {
+      const res = await fetch('/api/health', { cache: 'no-store' })
+      const nextConnected = res.ok
+
+      // Batch: only touch state if something actually changed to avoid spurious re-renders
+      if (nextConnected !== appServerConnected) {
+        const wasConnected = appServerConnected
+        appServerConnected = nextConnected
+
+        if (!appServerConnected) {
+          llmConnected = false
+          stopReconnectCountdown()
+        }
+
+        if (wasConnected && !appServerConnected) {
+          toastMessage = 'Application server is unreachable. Waiting for reconnect.'
+          toastVisible = true
+        }
+
+        if (!wasConnected && appServerConnected) {
+          toastMessage = 'Application server reconnected.'
+          toastVisible = true
+        }
+      }
+
+      return appServerConnected
+    } catch {
+      if (appServerConnected) {
+        appServerConnected = false
+        llmConnected = false
+        stopReconnectCountdown()
+        toastMessage = 'Application server is unreachable. Waiting for reconnect.'
+        toastVisible = true
+      }
+      return false
+    } finally {
+      appHealthInFlight = false
+    }
+  }
+
+  async function checkLlmHealth() {
+    if (!appServerConnected) {
+      llmConnected = false
+      return false
     }
 
-    draftPersistTimer = setTimeout(async () => {
-      if (!currentRawIdea && !state?.world_setting && !(state?.characters?.length) && !state?.critique_notes) {
+    if (heartbeatInFlight) return llmConnected
+    heartbeatInFlight = true
+    try {
+      const res = await fetch('/api/llm-health', { cache: 'no-store' })
+      let nextConnected = false
+
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        nextConnected = data?.connected === true
+      }
+
+      // Only update state if something changed
+      if (nextConnected !== llmConnected) {
+        const wasConnected = llmConnected
+        llmConnected = nextConnected
+
+        if (!wasConnected && llmConnected) {
+          toastMessage = 'LLM connection restored.'
+          toastVisible = true
+        }
+      }
+
+      return llmConnected
+    } catch {
+      if (llmConnected) {
+        llmConnected = false
+      }
+      return false
+    } finally {
+      heartbeatInFlight = false
+    }
+  }
+
+  function stopReconnectCountdown() {
+    if (reconnectCountdownTimer) {
+      clearInterval(reconnectCountdownTimer)
+      reconnectCountdownTimer = null
+    }
+  }
+
+  function startReconnectCountdown() {
+    if (!appServerConnected) return
+
+    stopReconnectCountdown()
+    llmCountdown = RECONNECT_SECONDS
+    llmCountdownDisplay = RECONNECT_SECONDS
+
+    reconnectCountdownTimer = setInterval(() => {
+      if (!appServerConnected) {
+        stopReconnectCountdown()
         return
       }
-      try {
-        await fetch('/api/draft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            raw_idea: currentRawIdea,
-            state,
-            meta,
-            save_pending: Boolean(pendingSave),
-          }),
-        })
-      } catch {
-        // Best-effort draft sync should not interrupt the UI.
+
+      if (llmConnected) {
+        stopReconnectCountdown()
+        return
       }
-    }, 300)
+
+      llmCountdown = Math.max(0, llmCountdown - 1)
+      llmCountdownDisplay = llmCountdown
+      if (llmCountdown > 0) return
+      llmCountdown = RECONNECT_SECONDS
+      void checkLlmHealth()
+    }, 1000)
+  }
+
+  async function appHealthTask() {
+    const appConnected = await checkAppHealth()
+    if (!appConnected) return
+    // If app just reconnected but LLM is still down, ensure countdown is running
+    if (!llmConnected && !reconnectCountdownTimer) {
+      startReconnectCountdown()
+    }
+  }
+
+  async function llmHealthTask() {
+    if (!appServerConnected) return
+    const connected = await checkLlmHealth()
+    if (!connected && !reconnectCountdownTimer) {
+      startReconnectCountdown()
+    }
+  }
+
+  function startLlmHeartbeat() {
+    if (pollingQueue) {
+      pollingQueue.stop()
+    }
+    pollingQueue = new PollingQueue({ minSpacingMs: 300 })
+    pollingQueue
+      .register('app-health', APP_HEALTH_POLL_SECONDS * 1000, appHealthTask)
+      .register('llm-health', HEALTH_POLL_SECONDS * 1000, llmHealthTask)
+      .start()
+  }
+
+  function stopLlmHeartbeat() {
+    if (pollingQueue) {
+      pollingQueue.stop()
+      pollingQueue = null
+    }
+    stopReconnectCountdown()
+  }
+
+  function offlineToastMessage() {
+    if (!appServerConnected) {
+      return 'Application server is offline. Waiting for reconnect.'
+    }
+    return 'LLM backend is offline. Waiting for reconnect.'
+  }
+
+  async function ensureApiReady() {
+    if (apiReady()) return true
+
+    toastMessage = offlineToastMessage()
+    toastVisible = true
+
+    if (!appServerConnected) {
+      await checkAppHealth()
+    }
+
+    return apiReady()
+  }
+
+  function draftPayload() {
+    const isEmpty = !currentRawIdea && !state?.world_setting && !(state?.characters?.length) && !state?.critique_notes
+    if (isEmpty) {
+      return { clear: true }
+    }
+
+    return {
+      raw_idea: currentRawIdea,
+      state,
+      meta,
+      save_pending: Boolean(pendingSave),
+    }
+  }
+
+  function draftChangeKey() {
+    const characters = state?.characters ?? []
+    let nameLengthTotal = 0
+    let detailsLengthTotal = 0
+    let imageCount = 0
+    for (const character of characters) {
+      nameLengthTotal += (character?.name ?? '').length
+      detailsLengthTotal += (character?.details ?? '').length
+      if (character?.image_path || character?.image_data) {
+        imageCount += 1
+      }
+    }
+
+    const worldLength = (state?.world_setting ?? '').length
+    const critiqueLength = (state?.critique_notes ?? '').length
+    const rawLength = (currentRawIdea ?? '').length
+    const nextStageValue = meta?.next_stage ?? ''
+    const stageValue = meta?.stage ?? ''
+    const elapsedValue = meta?.elapsed_ms ?? ''
+
+    return [
+      rawLength,
+      worldLength,
+      critiqueLength,
+      characters.length,
+      nameLengthTotal,
+      detailsLengthTotal,
+      imageCount,
+      state?.passed_inspection ? 1 : 0,
+      nextStageValue,
+      stageValue,
+      elapsedValue,
+      pendingSave ? 1 : 0,
+    ].join('|')
+  }
+
+  function handleDraftSyncStatus(status) {
+    if (status?.phase !== 'end') return
+
+    const totalMs = Number(status.totalMs || 0)
+    const bodyBytes = Number(status.bodyBytes || 0)
+    const serializeMs = Number(status.serializeMs || 0)
+
+    perfStats = {
+      ...perfStats,
+      autosaveCount: perfStats.autosaveCount + 1,
+      autosaveMaxMs: Math.max(perfStats.autosaveMaxMs, totalMs),
+      autosaveMaxBytes: Math.max(perfStats.autosaveMaxBytes, bodyBytes),
+      autosaveMaxSerializeMs: Math.max(perfStats.autosaveMaxSerializeMs, serializeMs),
+    }
+
+    if (perfDebugEnabled && (totalMs >= 25 || serializeMs >= 8 || bodyBytes >= 200_000)) {
+      console.debug('[perf][autosave]', {
+        reason: status.reason,
+        totalMs,
+        serializeMs,
+        bodyBytes,
+      })
+    }
+  }
+
+  function setupPerfObserver() {
+    if (!perfDebugEnabled) return
+    if (typeof PerformanceObserver === 'undefined') return
+
+    try {
+      perfObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const duration = Number(entry.duration || 0)
+          perfStats = {
+            ...perfStats,
+            longTaskCount: perfStats.longTaskCount + 1,
+            longTaskMaxMs: Math.max(perfStats.longTaskMaxMs, duration),
+          }
+          if (duration >= 50) {
+            console.debug('[perf][longtask]', { duration })
+          }
+        }
+      })
+      perfObserver.observe({ entryTypes: ['longtask'] })
+    } catch {
+      perfObserver = null
+    }
   }
 
   async function restoreOnLaunch() {
@@ -209,6 +480,7 @@
         ...characters[0],
         details: `${characters[0].details ?? ''}${chunk}`,
       }
+
       return {
         ...state,
         characters,
@@ -231,6 +503,10 @@
   }
 
   async function handleRun({ rawIdea }) {
+    if (!(await ensureApiReady())) {
+      return
+    }
+
     stopGeneration(false)
     currentRawIdea = rawIdea
     state = freshWorkflowState(rawIdea)
@@ -334,6 +610,10 @@
   }
 
   async function runManualStage(stage, continueOutput = false, directive = '', characterIndex = 0) {
+    if (!(await ensureApiReady())) {
+      return
+    }
+
     activeAgentTab = stage
     state = { ...state, _lastNode: stage }
     running = true
@@ -481,10 +761,15 @@
 
   async function handleModuleRun({ stage, directive, characterIndex = 0 }) {
     if (running) return
+    if (!(await ensureApiReady())) return
     await runManualStage(stage, false, directive ?? '', characterIndex)
   }
 
   async function handleCharacterImageGenerate({ characterIndex, promptOverride = '' }) {
+    if (!(await ensureApiReady())) {
+      return
+    }
+
     try {
       const res = await fetch('/api/character-image', {
         method: 'POST',
@@ -525,11 +810,16 @@
       return
     }
 
+    if (!(await ensureApiReady())) {
+      return
+    }
+
     await runManualStage(nextStage)
   }
 
   async function handleContinue() {
     if (running || !canContinueStage(activeAgentTab)) return
+    if (!(await ensureApiReady())) return
     await runManualStage(activeAgentTab, true)
   }
 
@@ -540,6 +830,7 @@
 
   async function handleSave(fname) {
     if (!pendingSave) return
+    if (!(await ensureApiReady())) return
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -554,6 +845,7 @@
 
   async function handleSuggestName() {
     if (!pendingSave) return
+    if (!(await ensureApiReady())) return
     suggesting = true
     try {
       await setSmartFilename(pendingSave.raw_idea)
@@ -566,23 +858,104 @@
     filename = generateDefaultFilename()
   }
 
+  function handleVisibilityChange() {
+    if (!draftSync) return
+    if (document.visibilityState === 'hidden') {
+      void draftSync.flushNow('visibility-hidden')
+    }
+  }
+
+  function handleBeforeUnload() {
+    const payload = draftPayload()
+    try {
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+      navigator.sendBeacon('/api/draft', blob)
+    } catch {
+      if (draftSync) {
+        void draftSync.flushNow('before-unload')
+      }
+    }
+  }
+
   onMount(async () => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      perfDebugEnabled = params.get('perf') === '1'
+    } catch {
+      perfDebugEnabled = false
+    }
+
+    draftSync = new DraftSyncController({
+      fetchImpl: fetch,
+      getPayload: draftPayload,
+      getChangeKey: draftChangeKey,
+      intervalMs: 1000,
+      debounceMs: 200,
+      maxWaitMs: 2000,
+      onStatusChange: handleDraftSyncStatus,
+    })
+    draftSync.start()
+    setupPerfObserver()
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     await restoreOnLaunch()
     restoreDone = true
+    startLlmHeartbeat()
+  })
+
+  onDestroy(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+
+    if (draftSync) {
+      void draftSync.flushNow('destroy')
+      draftSync.stop()
+      draftSync = null
+    }
+
+    if (perfObserver) {
+      try {
+        perfObserver.disconnect()
+      } catch {
+        // Ignore observer cleanup failures.
+      }
+      perfObserver = null
+    }
+
+    stopLlmHeartbeat()
   })
 
   $effect(() => {
     if (!restoreDone) return
-    scheduleDraftPersist()
+
+    currentRawIdea
+    state
+    meta
+    pendingSave
+
+    if (!draftSync) return
+    draftSync.markDirty()
   })
 </script>
 
 <TopBar bind:showStats bind:streaming bind:auto {meta} ongraph={openGraphTab} />
 
+{#if !appServerConnected}
+  <div class="llm-alert" role="alert" aria-live="assertive">
+    Application server is down. Waiting for reconnect.
+  </div>
+{:else if !llmConnected}
+  <div class="llm-alert" role="alert" aria-live="assertive">
+    LLM connection is gone. Checking again in {llmCountdownDisplay} second{llmCountdownDisplay === 1 ? '' : 's'}.
+  </div>
+{/if}
+
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <main>
-  <RawIdeaForm {running} bind:rawIdea={currentRawIdea} onrun={handleRun} />
+  <RawIdeaForm {running} llmConnected={apiReady()} bind:rawIdea={currentRawIdea} onrun={handleRun} />
 
   {#if activeTab === 'agents'}
     <AgentPanel
@@ -595,10 +968,11 @@
       {suggesting}
       showNext={!auto}
       nextLabel={getNextButtonLabel()}
-      nextDisabled={!nextStage || running}
+      nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets')}
       showStop={running}
       showContinue={activeAgentTab !== 'save_assets'}
-      continueDisabled={!canContinueStage(activeAgentTab) || running}
+      continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
+      llmConnected={apiReady()}
       onnext={handleNextStage}
       onstop={handleStopGeneration}
       oncontinue={handleContinue}
@@ -628,6 +1002,18 @@
 </main>
 
 <style>
+  .llm-alert {
+    max-width: 1080px;
+    margin: 0.75rem auto 0;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid #dc2626;
+    border-left: 6px solid #dc2626;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-weight: 700;
+  }
+
   main {
     max-width: 1080px;
     margin: 0 auto;

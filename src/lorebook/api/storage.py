@@ -89,3 +89,11 @@ def load_draft_state(draft_id: str = "latest") -> dict[str, Any] | None:
     if not draft_path.exists():
         return None
     return json.loads(draft_path.read_text(encoding="utf-8"))
+
+
+def delete_draft_state(draft_id: str = "latest") -> bool:
+    draft_path = get_drafts_dir() / f"{draft_id}.json"
+    if not draft_path.exists():
+        return False
+    draft_path.unlink()
+    return True

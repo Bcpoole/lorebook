@@ -1,15 +1,19 @@
 import base64
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from lorebook.api import storage
 from lorebook.api.app import create_app
 
 
-def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
+@pytest.fixture(autouse=True)
+def _isolate_outputs_root(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
 
+
+def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
     storage.save_draft_state(
         {
             "raw_idea": "draft idea",
@@ -29,8 +33,6 @@ def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_draft_endpoint_persists_latest_state(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
-
     client = TestClient(create_app())
     res = client.post(
         "/api/draft",
@@ -51,8 +53,6 @@ def test_draft_endpoint_persists_latest_state(tmp_path: Path, monkeypatch) -> No
 
 def test_character_image_endpoint_updates_state(tmp_path: Path, monkeypatch) -> None:
     from lorebook.api.routes import run as run_routes
-
-    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
 
     images_dir = tmp_path / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -171,3 +171,43 @@ def test_step_with_directive_overwrites_not_appends(monkeypatch) -> None:
     payload = res.json()
     assert payload["state"]["world_setting"] == "generated_1"
     assert payload["state"]["world_setting"] != "old_textgenerated_1"
+
+
+def test_llm_health_endpoint_reports_connectivity(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "is_local_llm_available", lambda: False)
+
+    client = TestClient(create_app())
+    res = client.get("/api/llm-health")
+
+    assert res.status_code == 200
+    assert res.json() == {"connected": False}
+
+
+def test_app_health_endpoint_reports_ok() -> None:
+    client = TestClient(create_app())
+    res = client.get("/api/health")
+
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok"}
+
+
+def test_draft_endpoint_can_clear_latest_draft() -> None:
+    storage.save_draft_state(
+        {
+            "raw_idea": "draft input",
+            "state": {"world_setting": "v1"},
+            "meta": {"elapsed_ms": 17},
+            "save_pending": False,
+        }
+    )
+
+    client = TestClient(create_app())
+    res = client.post("/api/draft", json={"clear": True})
+
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["ok"] is True
+    assert payload["cleared"] is True
+    assert storage.load_draft_state() is None

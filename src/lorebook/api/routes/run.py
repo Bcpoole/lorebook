@@ -14,13 +14,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from lorebook.characters import infer_character_name, should_replace_character_name
 from lorebook.api.storage import (
+    delete_draft_state,
     load_draft_state,
     load_run,
     save_draft_state,
     save_run_result,
 )
 from lorebook.graph import build_app
-from lorebook.llm import call_local_llm, stream_local_llm
+from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_llm
 from lorebook.state import CharacterState, WizardState
 
 router = APIRouter()
@@ -450,6 +451,20 @@ async def restore_latest() -> Dict[str, Any]:
     }
 
 
+@router.get("/llm-health")
+async def llm_health() -> Dict[str, Any]:
+    return {
+        "connected": is_local_llm_available(),
+    }
+
+
+@router.get("/health")
+async def app_health() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+    }
+
+
 @router.get("/runs/{run_id}")
 async def get_run_by_id(run_id: str) -> Dict[str, Any]:
     record = load_run(run_id)
@@ -460,6 +475,14 @@ async def get_run_by_id(run_id: str) -> Dict[str, Any]:
 
 @router.post("/draft")
 async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
+    if bool(body.get("clear", False)):
+        deleted = delete_draft_state("latest")
+        return {
+            "ok": True,
+            "cleared": True,
+            "deleted": deleted,
+        }
+
     payload = {
         "raw_idea": body.get("raw_idea", ""),
         "state": body.get("state", {}),

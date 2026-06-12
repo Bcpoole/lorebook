@@ -178,3 +178,31 @@ def stream_local_llm(
                 time.sleep(1 + attempt)
 
     raise RuntimeError("Failed to stream response from local LLM endpoint") from last_error
+
+
+def is_local_llm_available(endpoint: str | None = None, timeout_seconds: float = 3.0) -> bool:
+    """Return True when the configured local LLM endpoint is reachable."""
+    target_endpoint = endpoint or os.getenv("LOREBOOK_LLM_ENDPOINT", DEFAULT_ENDPOINT)
+    cleaned_endpoint = target_endpoint.rstrip("/")
+    parsed = urlparse(cleaned_endpoint)
+
+    if parsed.path not in ("", "/"):
+        health_candidates = [cleaned_endpoint]
+    else:
+        base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else cleaned_endpoint
+        health_candidates = [
+            f"{base_url}/health",
+            f"{base_url}/api/v1/model",
+            f"{base_url}/v1/models",
+            base_url,
+        ]
+
+    for candidate_endpoint in health_candidates:
+        try:
+            response = requests.get(candidate_endpoint, timeout=timeout_seconds)
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException:
+            continue
+
+    return False

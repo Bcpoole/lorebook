@@ -15,6 +15,7 @@
     showStop = false,
     showContinue = false,
     continueDisabled = true,
+    llmConnected = true,
     onnext = () => {},
     onstop = () => {},
     oncontinue = () => {},
@@ -161,7 +162,7 @@
   }
 
   async function runModulePrompt(stage) {
-    if (running) return
+    if (running || !llmConnected) return
 
     let directive = ''
     let characterIndex = selectedCharacterIndex
@@ -173,7 +174,7 @@
   }
 
   async function generateCharacterImage(index) {
-    if (running || imageGeneratingIndex !== null) return
+    if (running || imageGeneratingIndex !== null || !llmConnected) return
     imageGeneratingIndex = index
     try {
       await oncharacterimage({
@@ -218,7 +219,7 @@
       {/if}
 
       {#if showContinue}
-        <button class="continue-btn" onclick={oncontinue} disabled={continueDisabled}>
+        <button class="continue-btn" onclick={oncontinue} disabled={continueDisabled || !llmConnected}>
           Continue
         </button>
       {/if}
@@ -236,7 +237,7 @@
       <div class="module-runner">
         <label for="module-loremaster">Loremaster prompt</label>
         <textarea id="module-loremaster" bind:value={modulePromptLoremaster} rows="3" placeholder="Refine world setting output..."></textarea>
-        <button class="module-btn" onclick={() => runModulePrompt('loremaster')} disabled={running}>Send To Loremaster</button>
+        <button class="module-btn" onclick={() => runModulePrompt('loremaster')} disabled={running || !llmConnected}>Send To Loremaster</button>
       </div>
 
       {#if worldSetting}
@@ -261,7 +262,7 @@
       <div class="module-runner">
         <label for="module-character">Character Designer prompt (selected card)</label>
         <textarea id="module-character" bind:value={modulePromptCharacter} rows="3" placeholder="Refine selected character..."></textarea>
-        <button class="module-btn" onclick={() => runModulePrompt('character_designer')} disabled={running || characters.length === 0}>
+        <button class="module-btn" onclick={() => runModulePrompt('character_designer')} disabled={running || characters.length === 0 || !llmConnected}>
           Send To Character Designer
         </button>
       </div>
@@ -339,7 +340,7 @@
                     }}
                   ></textarea>
 
-                  <button class="module-btn" onclick={() => generateCharacterImage(index)} disabled={running || imageGeneratingIndex !== null}>
+                  <button class="module-btn" onclick={() => generateCharacterImage(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected}>
                     {imageGeneratingIndex === index ? 'Generating image…' : 'Generate Character Image'}
                   </button>
                 </div>
@@ -377,7 +378,7 @@
       <div class="module-runner">
         <label for="module-editor">Editor prompt</label>
         <textarea id="module-editor" bind:value={modulePromptEditor} rows="3" placeholder="Ask editor for specific critique focus..."></textarea>
-        <button class="module-btn" onclick={() => runModulePrompt('editor')} disabled={running || characters.length === 0}>
+        <button class="module-btn" onclick={() => runModulePrompt('editor')} disabled={running || characters.length === 0 || !llmConnected}>
           Send To Editor
         </button>
       </div>
@@ -418,13 +419,13 @@
             </div>
 
             <div class="name-actions">
-              <button class="suggest-btn" onclick={onsuggestname} disabled={suggesting}>
+              <button class="suggest-btn" onclick={onsuggestname} disabled={suggesting || !llmConnected}>
                 {suggesting ? '…' : '✨ Smart Name'}
               </button>
               <button class="random-btn" onclick={onrandomname}>🎲 Random ID</button>
             </div>
 
-            <button class="save-btn" onclick={() => onsave(filename)}>Save Run</button>
+            <button class="save-btn" onclick={() => onsave(filename)} disabled={!llmConnected}>Save Run</button>
           </div>
         </div>
       {:else}

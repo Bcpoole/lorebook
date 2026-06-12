@@ -2,7 +2,7 @@
 
 ## Experimentation
 
-experiment tab
+experiment collaspible left menu
 - show different prompts and responses, allow tweaking and saving prompts, A/B testing, etc. Examples:
     - temperature and top_p variations
     - prompt template variations (some type of substition mechanism to swap out different prompt versions and test them against each other)

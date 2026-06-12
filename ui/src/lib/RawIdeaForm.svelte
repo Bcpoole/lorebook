@@ -1,8 +1,8 @@
 <script>
-  let { running = false, rawIdea = $bindable(''), onrun } = $props()
+  let { running = false, llmConnected = true, rawIdea = $bindable(''), onrun } = $props()
 
   function submit() {
-    if (!rawIdea.trim() || running) return
+    if (!rawIdea.trim() || running || !llmConnected) return
     onrun({ rawIdea })
   }
 </script>
@@ -14,7 +14,7 @@
     rows="4"
     disabled={running}
   ></textarea>
-  <button onclick={submit} disabled={running || !rawIdea.trim()}>
+  <button onclick={submit} disabled={running || !rawIdea.trim() || !llmConnected}>
     {running ? 'Running…' : 'Generate'}
   </button>
 </div>
