@@ -4,7 +4,6 @@
     saved = $bindable({}),
     isDirty = $bindable(false),
     sdStyleOptions = ['balanced'],
-    personaOptions = [],
     auto = $bindable(false),
     streaming = $bindable(true),
     showStats = $bindable(false),
@@ -12,7 +11,6 @@
     onCancel = () => {},
     onSaveSd = () => {},
     onCancelSd = () => {},
-    onPersonaChange = () => {},
   } = $props()
 
   let activeTab = $state('experiment')
@@ -127,17 +125,6 @@
     onCancelSd()
   }
 
-  const selectedPersona = $derived.by(() => {
-    const selectedId = live?.general?.persona || 'blank'
-    const found = personaOptions.find((p) => p.id === selectedId)
-    return found || personaOptions[0] || null
-  })
-
-  const selectedTags = $derived(() => {
-    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return ''
-    return selectedPersona.tags.slice(0, 5).join(', ')
-  })
-
   // Sync top-level checkboxes with general config
   $effect.pre(() => {
     if (live?.general) {
@@ -211,39 +198,14 @@
     {/if}
   </div>
 
+  <div class="panel-actions">
+    <button class="btn btn-save" onclick={handleSave} disabled={!isDirty}>💾 Save</button>
+    <button class="btn btn-cancel" onclick={handleCancel} disabled={!isDirty}>✕ Cancel</button>
+  </div>
+
   <div class="panel-content">
     {#if activeTab === 'general'}
       <section class="section-body">
-        <div class="subsection-label">Agent Persona</div>
-
-        <div class="persona-panel">
-          <div class="control-group">
-            <label for="persona-select">Persona</label>
-            <select id="persona-select" bind:value={live.general.persona} onchange={() => onPersonaChange(live.general.persona)}>
-              {#each personaOptions as persona}
-                <option value={persona.id}>{persona.name}</option>
-              {/each}
-            </select>
-          </div>
-
-          {#if selectedPersona}
-            <div class="persona-name">{selectedPersona.name}</div>
-
-            <div class="persona-avatar-wrap">
-              {#if selectedPersona.avatarUrl}
-                <img class="persona-avatar" src={selectedPersona.avatarUrl} alt={`${selectedPersona.name} avatar`} width="256" height="256" />
-              {:else}
-                <div class="persona-avatar persona-avatar-placeholder">{selectedPersona.name?.slice(0, 1) || '?'}</div>
-              {/if}
-            </div>
-
-            <div class="persona-description">{selectedPersona.description}</div>
-            <div class="persona-tags">{selectedTags}</div>
-          {/if}
-        </div>
-
-        <hr class="divider" />
-
         <div class="control-group">
           <label for="output-format">Output Format</label>
           <select id="output-format" bind:value={live.general.outputFormat}>
@@ -450,10 +412,6 @@
     {/if}
   </div>
 
-  <div class="panel-footer">
-    <button class="btn btn-save" onclick={handleSave} disabled={!isDirty}>💾 Save</button>
-    <button class="btn btn-cancel" onclick={handleCancel} disabled={!isDirty}>✕ Cancel</button>
-  </div>
 </div>
 
 <style>
@@ -467,7 +425,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     height: 100vh;
     width: 300px;
-    overflow-y: auto;
+    overflow: hidden;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
   }
 
@@ -511,6 +469,7 @@
 
   .panel-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.6rem;
   }
@@ -538,61 +497,6 @@
   .control-group label {
     font-size: 0.78rem;
     color: #cbd5e1;
-  }
-
-  .persona-panel {
-    border: 1px solid #334155;
-    border-radius: 10px;
-    background: #0b1220;
-    padding: 0.6rem;
-    display: grid;
-    gap: 0.45rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .persona-name {
-    font-size: 0.92rem;
-    font-weight: 700;
-    color: #f8fafc;
-  }
-
-  .persona-avatar-wrap {
-    display: flex;
-    justify-content: center;
-  }
-
-  .persona-avatar {
-    width: 256px;
-    height: 256px;
-    max-width: 100%;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    object-fit: cover;
-    background: #111827;
-  }
-
-  .persona-avatar-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2.4rem;
-    font-weight: 700;
-    color: #94a3b8;
-  }
-
-  .persona-description {
-    font-size: 0.75rem;
-    color: #cbd5e1;
-    line-height: 1.3;
-    min-height: 2.2em;
-  }
-
-  .persona-tags {
-    font-size: 0.72rem;
-    color: #60a5fa;
-    border-top: 1px dashed #334155;
-    padding-top: 0.35rem;
-    overflow-wrap: anywhere;
   }
 
   .input-row {
@@ -632,14 +536,13 @@
     justify-content: space-between;
   }
 
-  .panel-footer {
+  .panel-actions {
     display: flex;
     gap: 0.45rem;
-    padding: 0.65rem;
-    border-top: 1px solid #1f2937;
+    padding: 0.5rem 0.65rem;
+    border-bottom: 1px solid #1f2937;
     background: #0b1220;
-    position: sticky;
-    bottom: 0;
+    flex-shrink: 0;
   }
 
   .btn {

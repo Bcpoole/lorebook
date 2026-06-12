@@ -148,6 +148,17 @@
     }
   }
 
+  const selectedPersona = $derived.by(() => {
+    const selectedId = experimentationLive?.general?.persona || 'blank'
+    const found = personaOptions.find((persona) => persona.id === selectedId)
+    return found || personaOptions[0] || null
+  })
+
+  const selectedPersonaTags = $derived.by(() => {
+    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return ''
+    return selectedPersona.tags.slice(0, 5).join(', ')
+  })
+
   function generateDefaultFilename() {
     return crypto.randomUUID().replace(/-/g, '')
   }
@@ -870,6 +881,18 @@
     }
   }
 
+  async function handlePersonaChanged(event) {
+    const nextPersona = event?.currentTarget?.value || 'blank'
+    experimentationLive = {
+      ...experimentationLive,
+      general: {
+        ...experimentationLive.general,
+        persona: nextPersona,
+      },
+    }
+    await saveExperimentation()
+  }
+
   async function handleRun({ rawIdea }) {
     if (!(await ensureApiReady())) {
       return
@@ -1540,22 +1563,21 @@
     bind:streaming
     bind:showStats
     sdStyleOptions={sdStyleOptions}
-    personaOptions={personaOptions}
     onSave={saveExperimentation}
     onCancel={cancelExperimentation}
     onSaveSd={saveExperimentation}
     onCancelSd={cancelExperimentation}
-    onPersonaChange={() => saveExperimentation()}
   />
 
-  <main>
-    <RawIdeaForm
-      {running}
-      llmConnected={apiReady()}
-      bind:rawIdea={currentRawIdea}
-      onrun={handleRun}
-      onstop={handleStopGeneration}
-    />
+  <div class="workspace-area">
+    <main>
+      <RawIdeaForm
+        {running}
+        llmConnected={apiReady()}
+        bind:rawIdea={currentRawIdea}
+        onrun={handleRun}
+        onstop={handleStopGeneration}
+      />
 
     {#if activeTab === 'agents'}
       <AgentPanel
@@ -1604,13 +1626,48 @@
         {/if}
       </div>
     {/if}
-  </main>
+    </main>
+
+    <aside class="persona-side-panel">
+      <div class="persona-side-header">Agent Persona</div>
+      <div class="persona-side-body">
+        <div class="control-group">
+          <label for="persona-select">Persona</label>
+          <select id="persona-select" value={experimentationLive.general?.persona || 'blank'} onchange={handlePersonaChanged}>
+            {#each personaOptions as persona}
+              <option value={persona.id}>{persona.name}</option>
+            {/each}
+          </select>
+        </div>
+
+        {#if selectedPersona}
+          <div class="persona-avatar-wrap">
+            {#if selectedPersona.avatarUrl}
+              <img class="persona-avatar" src={selectedPersona.avatarUrl} alt={`${selectedPersona.name} avatar`} width="256" height="256" />
+            {:else}
+              <div class="persona-avatar persona-avatar-placeholder">{selectedPersona.name?.slice(0, 1) || '?'}</div>
+            {/if}
+          </div>
+          <div class="persona-description">{selectedPersona.description}</div>
+          <div class="persona-tags">{selectedPersonaTags}</div>
+        {:else}
+          <p class="persona-empty">No persona options available.</p>
+        {/if}
+      </div>
+    </aside>
+  </div>
 </div>
 
 <style>
   .app-container {
     display: flex;
     height: 100vh;
+  }
+
+  .workspace-area {
+    flex: 1;
+    min-width: 0;
+    display: flex;
   }
 
   .llm-alert {
@@ -1630,11 +1687,103 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    max-width: 1080px;
-    margin: 0 auto;
     padding: 1rem;
     font-family: system-ui, sans-serif;
-    width: 100%;
+    min-width: 0;
+  }
+
+  .persona-side-panel {
+    width: 280px;
+    border-left: 1px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .persona-side-header {
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #475569;
+    background: #f1f5f9;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .persona-side-body {
+    padding: 0.8rem;
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .persona-side-body .control-group {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .persona-side-body .control-group label {
+    font-size: 0.78rem;
+    color: #334155;
+  }
+
+  .persona-side-body select {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.38rem 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  .persona-avatar-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  .persona-avatar {
+    width: 256px;
+    height: 256px;
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    object-fit: cover;
+    background: #ffffff;
+  }
+
+  .persona-avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.3rem;
+    font-weight: 700;
+    color: #64748b;
+    background: #e2e8f0;
+  }
+
+  .persona-description {
+    font-size: 0.79rem;
+    color: #334155;
+    line-height: 1.35;
+  }
+
+  .persona-tags {
+    font-size: 0.74rem;
+    color: #0f766e;
+    border-top: 1px dashed #cbd5e1;
+    padding-top: 0.4rem;
+    overflow-wrap: anywhere;
+  }
+
+  .persona-empty {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #64748b;
+    font-style: italic;
   }
 
   .graph-section {
