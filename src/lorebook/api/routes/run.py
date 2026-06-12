@@ -13,6 +13,14 @@ from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from lorebook.characters import infer_character_name, should_replace_character_name
+from lorebook.config.prompts import (
+    CHARACTER_SYSTEM,
+    EDITOR_SYSTEM,
+    LOREMASTER_SYSTEM,
+    REVIEW_SUMMARY_SYSTEM,
+    SD_PROMPT_SYSTEM,
+)
+from lorebook.config.sd_styles import DEFAULT_SD_STYLE, SD_STYLES
 from lorebook.api.storage import (
     delete_draft_state,
     load_draft_state,
@@ -25,30 +33,6 @@ from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_ll
 from lorebook.state import CharacterState, WizardState
 
 router = APIRouter()
-
-LOREMASTER_SYSTEM = (
-    "You are an expert world builder. Expand the user's idea into a structured "
-    "setting with 3 distinct world rules."
-)
-
-CHARACTER_SYSTEM = (
-    "You are a SillyTavern character designer. Create exactly one companion character "
-    "based on this world setting. Output a complete character sheet with name, appearance, "
-    "personality, background, and role in the world. Be concrete and vivid. "
-    "Start with the character name, then describe their details."
-)
-
-EDITOR_SYSTEM = (
-    "You are a critical editor. Review the character design against the world "
-    "setting. If it feels generic or breaks the world rules, write critique. If "
-    "it is excellent, reply exactly with: PASSED."
-)
-
-SD_PROMPT_SYSTEM = (
-    "You generate Stable Diffusion prompts for character portraits. Return one line only, "
-    "focused on visual style, composition, lighting, clothing, and mood. "
-    "No markdown, no explanations."
-)
 
 
 def _tokens(env_var: str, default: int) -> int:
@@ -551,17 +535,49 @@ def _make_sd_prompt(state: WizardState, character: CharacterState, prompt_overri
     return generated.strip().replace("\n", " ")
 
 
-def _render_sd_image(prompt: str) -> tuple[str, str]:
-    endpoint = os.getenv("LOREBOOK_SD_ENDPOINT", "http://127.0.0.1:7860").rstrip("/")
+def _style_sd_prompts(prompt: str, style_name: str | None = None, negative_extra: str | None = None) -> tuple[str, str, str]:
+    style_key = (style_name or "").strip().lower() or DEFAULT_SD_STYLE
+    style = SD_STYLES.get(style_key, SD_STYLES[DEFAULT_SD_STYLE])
+
+    prompt_template = str(style.get("prompt", "{prompt}"))
+    negative_template = str(style.get("negative_prompt", "{prompt}"))
+
+    if "{prompt}" not in prompt_template:
+        prompt_template = f"{prompt_template}, {{prompt}}"
+    if "{prompt}" not in negative_template:
+        negative_template = f"{negative_template}, {{prompt}}"
+
+    styled_prompt = prompt_template.format(prompt=prompt)
+    styled_negative = negative_template.format(prompt=prompt)
+    if negative_extra and negative_extra.strip():
+        styled_negative = f"{styled_negative}, {negative_extra.strip()}"
+    return styled_prompt, styled_negative, style_key
+
+
+def _render_sd_image(prompt: str, style_name: str | None = None, sd_config: dict[str, Any] | None = None) -> tuple[str, str, str, str]:
+    config = sd_config or {}
+    styled_prompt, styled_negative, resolved_style = _style_sd_prompts(
+        prompt,
+        style_name=style_name,
+        negative_extra=str(config.get("negativePromptExtra", "")),
+    )
+    endpoint = str(config.get("endpoint") or os.getenv("LOREBOOK_SD_ENDPOINT", "http://127.0.0.1:7860")).rstrip("/")
+    steps = int(config.get("steps", 30))
+    width = int(config.get("width", 768))
+    height = int(config.get("height", 768))
+    cfg_scale = float(config.get("cfgScale", 3))
+    sampler_name = str(config.get("samplerName", "DPM++ 2M"))
+
     response = requests.post(
         f"{endpoint}/sdapi/v1/txt2img",
         json={
-            "prompt": prompt,
-            "steps": 20,
-            "width": 512,
-            "height": 512,
-            "cfg_scale": 7,
-            "sampler_name": "Euler a",
+            "prompt": styled_prompt,
+            "negative_prompt": styled_negative,
+            "steps": steps,
+            "width": width,
+            "height": height,
+            "cfg_scale": cfg_scale,
+            "sampler_name": sampler_name,
         },
         timeout=180,
     )
@@ -580,11 +596,11 @@ def _render_sd_image(prompt: str) -> tuple[str, str]:
     image_path = _outputs_images_dir() / image_name
     image_path.write_bytes(image_bytes)
 
-    return str(image_path), f"data:image/png;base64,{encoded}"
+    return str(image_path), f"data:image/png;base64,{encoded}", styled_prompt, resolved_style
 
 
-def _assert_sd_available() -> None:
-    endpoint = os.getenv("LOREBOOK_SD_ENDPOINT", "http://127.0.0.1:7860").rstrip("/")
+def _assert_sd_available(endpoint_override: str | None = None) -> None:
+    endpoint = str(endpoint_override or os.getenv("LOREBOOK_SD_ENDPOINT", "http://127.0.0.1:7860")).rstrip("/")
     try:
         response = requests.get(f"{endpoint}/sdapi/v1/progress", timeout=5)
         response.raise_for_status()
@@ -653,28 +669,57 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
     raw_idea: str = body.get("raw_idea", "")
     state = _normalize_state(raw_idea, body.get("state"))
     character_index = max(0, int(body.get("character_index", 0)))
+    mode = str(body.get("mode", "full")).strip().lower()
+    style_name = str(body.get("style", "")).strip().lower() or None
+    sd_config = body.get("sd_config") if isinstance(body.get("sd_config"), dict) else {}
+
+    if mode not in {"full", "prompt", "image"}:
+        raise HTTPException(status_code=400, detail="mode must be one of: full, prompt, image")
 
     if character_index >= len(state.get("characters", [])):
         raise HTTPException(status_code=400, detail="character_index is out of range")
 
     character = state["characters"][character_index]
-    _assert_sd_available()
     prompt_override = body.get("prompt_override")
-    prompt = _make_sd_prompt(state, character, prompt_override=prompt_override)
 
-    try:
-        image_path, image_data = _render_sd_image(prompt)
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail="Failed to render image from Stable Diffusion endpoint") from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if mode == "prompt":
+        prompt = _make_sd_prompt(state, character, prompt_override=prompt_override)
+        updated_character = {
+            **character,
+            "image_prompt": prompt,
+        }
+    else:
+        if mode == "image":
+            prompt = (prompt_override or "").strip() or str(character.get("image_prompt") or "").strip()
+            if not prompt:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No existing image prompt found. Regenerate prompt first or provide prompt_override.",
+                )
+        else:
+            prompt = _make_sd_prompt(state, character, prompt_override=prompt_override)
 
-    updated_character = {
-        **character,
-        "image_prompt": prompt,
-        "image_path": image_path,
-        "image_data": image_data,
-    }
+        _assert_sd_available(sd_config.get("endpoint") if isinstance(sd_config, dict) else None)
+        try:
+            image_path, image_data, styled_prompt, resolved_style = _render_sd_image(
+                prompt,
+                style_name=style_name,
+                sd_config=sd_config,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail="Failed to render image from Stable Diffusion endpoint") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        updated_character = {
+            **character,
+            "image_prompt": prompt,
+            "image_prompt_styled": styled_prompt,
+            "image_style": resolved_style,
+            "image_path": image_path,
+            "image_data": image_data,
+        }
+
     updated_characters = list(state["characters"])
     updated_characters[character_index] = updated_character
     state["characters"] = updated_characters
@@ -693,6 +738,14 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
         "state": state,
         "character_index": character_index,
         "character": updated_character,
+    }
+
+
+@router.get("/sd-styles")
+async def get_sd_styles() -> Dict[str, Any]:
+    return {
+        "default_style": DEFAULT_SD_STYLE,
+        "styles": sorted(SD_STYLES.keys()),
     }
 
 
@@ -803,3 +856,34 @@ async def run_single_step_stream(body: Dict[str, Any], request: Request) -> Even
             experimentation_config=experimentation_config,
         )
     )
+
+
+@router.post("/review-summary")
+async def generate_review_summary(body: Dict[str, Any]) -> Dict[str, Any]:
+    original: str = str(body.get("original", ""))
+    revised: str = str(body.get("revised", ""))
+    stage: str = str(body.get("stage", ""))
+
+    if not revised.strip():
+        return {
+            "summary": "- Modified: Waiting for generated output.\n- Added: Waiting for generated output.\n- Removed: Waiting for generated output.",
+        }
+
+    stage_hint = stage.replace("_", " ").strip() or "draft"
+    prompt = (
+        f"Stage: {stage_hint}\n\n"
+        "Write a human narrative summary of how the revised draft differs from the original.\n"
+        "Use exactly this structure and keep each bullet to 1-2 sentences:\n"
+        "- Modified: describe the major shifts in focus, tone, structure, or framing.\n"
+        "- Added: describe the most meaningful new ideas or details.\n"
+        "- Removed: describe what emphasis, constraints, or details were dropped.\n\n"
+        "Rules:\n"
+        "- No numeric estimates or counts.\n"
+        "- No mention of tokens, sentences, or statistics.\n"
+        "- Be specific enough to guide an approve/reject decision.\n\n"
+        f"Original:\n{original}\n\n"
+        f"Revised:\n{revised}\n"
+    )
+
+    summary = call_local_llm(REVIEW_SUMMARY_SYSTEM, prompt, max_length=360)
+    return {"summary": summary.strip()}

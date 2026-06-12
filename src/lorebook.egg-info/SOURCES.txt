@@ -23,6 +23,7 @@ src/lorebook/api/routes/run.py
 src/lorebook/api/routes/save.py
 src/lorebook/api/routes/stream.py
 tests/test_api_integration.py
+tests/test_cleanup_continued.py
 tests/test_experimentation.py
 tests/test_nodes_fixtures.py
 tests/test_smoke.py

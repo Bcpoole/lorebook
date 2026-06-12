@@ -36,22 +36,43 @@
   let llmConnected = $state(true)
   let restoredDraft = $state(null)
   let outputStale = $state(false)
+  let reviewPanelOpen = $state(true)
+  let outputReview = $state(null)
+  let reviewSummaryRequestId = 0
+  let sdStyleOptions = $state(['balanced'])
+  let imageCompare = $state(null)
+
+  const DEFAULT_EXPERIMENTATION = {
+    general: {
+      outputFormat: 'markdown',
+      multilineReplies: true,
+    },
+    experimentation: {
+      temperature: 0.7,
+      topP: 0.9,
+      topK: 40,
+      repetitionPenalty: 1.1,
+      maxLength: 512,
+      contextSize: 2048,
+      minP: 0,
+      presencePenalty: 0,
+      samplerSeed: -1,
+    },
+    sd: {
+      style: 'balanced',
+      endpoint: 'http://127.0.0.1:7860',
+      steps: 30,
+      width: 768,
+      height: 768,
+      cfgScale: 3,
+      samplerName: 'DPM++ 2M',
+      negativePromptExtra: '',
+    },
+  }
 
   // Experimentation state
-  let experimentationLive = $state({
-    temperature: 0.7,
-    topP: 0.9,
-    topK: 40,
-    repetitionPenalty: 1.1,
-    maxLength: 512,
-    contextSize: 2048,
-    outputFormat: 'markdown',
-    multilineReplies: true,
-    minP: 0,
-    presencePenalty: 0,
-    samplerSeed: -1,
-  })
-  let experimentationSaved = $state(JSON.parse(JSON.stringify(experimentationLive)))
+  let experimentationLive = $state(JSON.parse(JSON.stringify(DEFAULT_EXPERIMENTATION)))
+  let experimentationSaved = $state(JSON.parse(JSON.stringify(DEFAULT_EXPERIMENTATION)))
   let experimentationDirty = $state(false)
   let llmCountdown = 10
   let llmCountdownDisplay = $state(10)
@@ -75,6 +96,50 @@
 
   function apiReady() {
     return appServerConnected && llmConnected
+  }
+
+  function normalizeExperimentationConfig(config) {
+    const incoming = config ?? {}
+    const flatLooksOld = incoming && !incoming.experimentation && (incoming.temperature !== undefined || incoming.topP !== undefined)
+
+    if (flatLooksOld) {
+      return {
+        general: {
+          outputFormat: incoming.outputFormat ?? DEFAULT_EXPERIMENTATION.general.outputFormat,
+          multilineReplies: incoming.multilineReplies ?? DEFAULT_EXPERIMENTATION.general.multilineReplies,
+        },
+        experimentation: {
+          temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
+          topP: incoming.topP ?? DEFAULT_EXPERIMENTATION.experimentation.topP,
+          topK: incoming.topK ?? DEFAULT_EXPERIMENTATION.experimentation.topK,
+          repetitionPenalty: incoming.repetitionPenalty ?? DEFAULT_EXPERIMENTATION.experimentation.repetitionPenalty,
+          maxLength: incoming.maxLength ?? DEFAULT_EXPERIMENTATION.experimentation.maxLength,
+          contextSize: incoming.contextSize ?? DEFAULT_EXPERIMENTATION.experimentation.contextSize,
+          minP: incoming.minP ?? DEFAULT_EXPERIMENTATION.experimentation.minP,
+          presencePenalty: incoming.presencePenalty ?? DEFAULT_EXPERIMENTATION.experimentation.presencePenalty,
+          samplerSeed: incoming.samplerSeed ?? DEFAULT_EXPERIMENTATION.experimentation.samplerSeed,
+        },
+        sd: {
+          ...DEFAULT_EXPERIMENTATION.sd,
+          ...(incoming.sd ?? {}),
+        },
+      }
+    }
+
+    return {
+      general: {
+        ...DEFAULT_EXPERIMENTATION.general,
+        ...(incoming.general ?? {}),
+      },
+      experimentation: {
+        ...DEFAULT_EXPERIMENTATION.experimentation,
+        ...(incoming.experimentation ?? {}),
+      },
+      sd: {
+        ...DEFAULT_EXPERIMENTATION.sd,
+        ...(incoming.sd ?? {}),
+      },
+    }
   }
 
   function generateDefaultFilename() {
@@ -111,6 +176,139 @@
     if (stage === 'character_designer') return Boolean(state.characters?.some((character) => character?.details))
     if (stage === 'editor') return Boolean(state.critique_notes) && state.passed_inspection !== true
     return false
+  }
+
+  function getStageOutputFromState(localState, stage, characterIndex = 0) {
+    if (!localState) return ''
+    if (stage === 'loremaster') return localState.world_setting ?? ''
+    if (stage === 'editor') return localState.critique_notes ?? ''
+    if (stage === 'character_designer') {
+      const chars = localState.characters ?? []
+      return chars[characterIndex]?.details ?? ''
+    }
+    return ''
+  }
+
+  function setStageOutputInState(localState, stage, value, characterIndex = 0) {
+    if (!localState) return localState
+    if (stage === 'loremaster') {
+      return { ...localState, world_setting: value }
+    }
+    if (stage === 'editor') {
+      return { ...localState, critique_notes: value }
+    }
+    if (stage === 'character_designer') {
+      const chars = [...(localState.characters ?? [])]
+      while (chars.length <= characterIndex) {
+        chars.push({ name: `Companion ${chars.length + 1}`, details: '' })
+      }
+      chars[characterIndex] = {
+        ...chars[characterIndex],
+        details: value,
+      }
+      return { ...localState, characters: chars }
+    }
+    return localState
+  }
+
+  async function generateReviewSummaryWithLlm(stage, originalText, revisedText) {
+    if (!revisedText?.trim()) {
+      return '- Modified: Waiting for generated output.\n- Added: Waiting for generated output.\n- Removed: Waiting for generated output.'
+    }
+
+    const res = await fetch('/api/review-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stage,
+        original: originalText,
+        revised: revisedText,
+      }),
+    })
+
+    if (!res.ok) {
+      throw new Error('Failed to generate summary')
+    }
+
+    const data = await res.json()
+    return data.summary ?? '- Modified: Unable to summarize.\n- Added: Unable to summarize.\n- Removed: Unable to summarize.'
+  }
+
+  function startReview(stage, characterIndex = 0) {
+    const original = getStageOutputFromState(state, stage, characterIndex)
+    outputReview = {
+      stage,
+      characterIndex,
+      original,
+      wip: '',
+      summary: '- Modified: Waiting for first generated tokens.\n- Added: Waiting for first generated tokens.\n- Removed: Waiting for first generated tokens.',
+      firstSummaryGenerated: false,
+      summaryLoading: false,
+    }
+  }
+
+  function clearReview() {
+    reviewSummaryRequestId += 1
+    outputReview = null
+  }
+
+  function updateReviewWip(nextWip) {
+    if (!outputReview) return
+    outputReview = {
+      ...outputReview,
+      wip: nextWip,
+    }
+  }
+
+  async function requestReviewSummary(force = false) {
+    if (!outputReview) return
+
+    if (!force && outputReview.firstSummaryGenerated) return
+
+    const requestId = ++reviewSummaryRequestId
+    outputReview = {
+      ...outputReview,
+      summaryLoading: true,
+    }
+
+    try {
+      const summary = await generateReviewSummaryWithLlm(outputReview.stage, outputReview.original, outputReview.wip)
+      if (!outputReview || reviewSummaryRequestId !== requestId) return
+      outputReview = {
+        ...outputReview,
+        summary,
+        firstSummaryGenerated: true,
+        summaryLoading: false,
+      }
+    } catch {
+      if (!outputReview || reviewSummaryRequestId !== requestId) return
+      outputReview = {
+        ...outputReview,
+        summary: '- Modified: Unable to generate summary right now.\n- Added: Try again once generation settles.\n- Removed: You can use Regenerate Summary to retry.',
+        firstSummaryGenerated: outputReview.firstSummaryGenerated,
+        summaryLoading: false,
+      }
+    }
+  }
+
+  function regenerateReviewSummary() {
+    void requestReviewSummary(true)
+  }
+
+  function handleApproveReview() {
+    if (!outputReview) return
+    state = setStageOutputInState(state, outputReview.stage, outputReview.wip, outputReview.characterIndex)
+    clearReview()
+  }
+
+  function handleRejectReview() {
+    clearReview()
+  }
+
+  function buildStateWithReviewOutput(baseState, stage, characterIndex = 0) {
+    if (!outputReview || outputReview.stage !== stage) return baseState
+    const candidate = outputReview.wip || outputReview.original
+    return setStageOutputInState(baseState, stage, candidate, characterIndex)
   }
 
   function getStageFromState(localState, savePending = false) {
@@ -558,11 +756,34 @@
       const res = await fetch('/api/experimentation/load', { cache: 'no-store' })
       if (res.ok) {
         const data = await res.json()
-        experimentationLive = data
-        experimentationSaved = JSON.parse(JSON.stringify(data))
+        const normalized = normalizeExperimentationConfig(data)
+        experimentationLive = normalized
+        experimentationSaved = JSON.parse(JSON.stringify(normalized))
       }
     } catch (error) {
       console.warn('Could not load experimentation config:', error)
+    }
+  }
+
+  async function loadSdStyles() {
+    try {
+      const res = await fetch('/api/sd-styles', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      const styles = Array.isArray(data?.styles) && data.styles.length > 0 ? data.styles : ['balanced']
+      sdStyleOptions = styles
+      const defaultStyle = data?.default_style || styles[0]
+      if (!experimentationLive.sd?.style || !styles.includes(experimentationLive.sd.style)) {
+        experimentationLive = {
+          ...experimentationLive,
+          sd: {
+            ...experimentationLive.sd,
+            style: defaultStyle,
+          },
+        }
+      }
+    } catch {
+      // Keep fallback styles.
     }
   }
 
@@ -581,6 +802,7 @@
     outputStale = false
     filename = ''
     nextStage = null
+    clearReview()
     running = true
     activeAgentTab = 'loremaster'
 
@@ -593,7 +815,7 @@
       const params = new URLSearchParams({ 
         raw_idea: rawIdea, 
         auto_save: 'true',
-        experimentation_config: JSON.stringify(experimentationLive)
+        experimentation_config: JSON.stringify(experimentationLive.experimentation)
       })
       const es = new EventSource(`/api/stream?${params}`)
       activeEventSource = es
@@ -683,7 +905,8 @@
     }
   }
 
-  async function runManualStage(stage, continueOutput = false, directive = '', characterIndex = 0) {
+  async function runManualStage(stage, continueOutput = false, directive = '', characterIndex = 0, options = {}) {
+    const { captureToReview = false, requestStateOverride = null } = options
     if (!(await ensureApiReady())) {
       return
     }
@@ -693,7 +916,7 @@
     running = true
 
     if (streaming) {
-      await runManualStageStreaming(stage, continueOutput, directive, characterIndex)
+      await runManualStageStreaming(stage, continueOutput, directive, characterIndex, options)
       return
     }
 
@@ -706,12 +929,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           raw_idea: currentRawIdea,
-          state,
+          state: requestStateOverride ?? state,
           stage,
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
-          experimentation_config: experimentationLive,
+          experimentation_config: experimentationLive.experimentation,
         }),
       })
 
@@ -722,7 +945,17 @@
       }
 
       const data = await res.json()
-      state = { ...data.state, _lastNode: stage }
+      if (captureToReview && outputReview && outputReview.stage === stage) {
+        const nextWip = getStageOutputFromState(data.state, stage, characterIndex)
+        updateReviewWip(nextWip)
+        const preserved = setStageOutputInState(data.state, stage, outputReview.original, characterIndex)
+        state = { ...preserved, _lastNode: stage }
+        if (!outputReview.firstSummaryGenerated && nextWip?.trim()) {
+          void requestReviewSummary(false)
+        }
+      } else {
+        state = { ...data.state, _lastNode: stage }
+      }
       meta = data.meta
       nextStage = data.next_stage ?? null
       
@@ -746,7 +979,8 @@
     }
   }
 
-  async function runManualStageStreaming(stage, continueOutput = false, directive = '', characterIndex = 0) {
+  async function runManualStageStreaming(stage, continueOutput = false, directive = '', characterIndex = 0, options = {}) {
+    const { captureToReview = false, requestStateOverride = null } = options
     const controller = new AbortController()
     activeAbortController = controller
     try {
@@ -755,12 +989,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           raw_idea: currentRawIdea,
-          state,
+          state: requestStateOverride ?? state,
           stage,
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
-          experimentation_config: experimentationLive,
+          experimentation_config: experimentationLive.experimentation,
         }),
         signal: controller.signal,
       })
@@ -793,15 +1027,36 @@
         if (eventName === 'node-start') {
           state = { ...state, _lastNode: payload.node }
         } else if (eventName === 'node-token') {
-          state = applyStreamingChunk(payload.node, payload.chunk)
+          if (captureToReview && payload.node === stage && outputReview && outputReview.stage === stage) {
+            updateReviewWip(`${outputReview.wip ?? ''}${payload.chunk ?? ''}`)
+          } else {
+            state = applyStreamingChunk(payload.node, payload.chunk)
+          }
         } else if (eventName === 'node-complete') {
-          state = { ...state, ...payload.output, _lastNode: payload.node }
+          if (captureToReview && payload.node === stage && outputReview && outputReview.stage === stage) {
+            const nextWip = getStageOutputFromState(payload.output ?? {}, stage, characterIndex)
+            if (nextWip) {
+              updateReviewWip(nextWip)
+            }
+          } else {
+            state = { ...state, ...payload.output, _lastNode: payload.node }
+          }
           // Auto-switch to the stage that just completed for better UX
           if (payload.node === 'loremaster' || payload.node === 'character_designer' || payload.node === 'editor') {
             activeAgentTab = payload.node
           }
         } else if (eventName === 'step-complete') {
-          state = { ...payload.state, _lastNode: stage }
+          if (captureToReview && outputReview && outputReview.stage === stage) {
+            const nextWip = getStageOutputFromState(payload.state, stage, characterIndex)
+            updateReviewWip(nextWip)
+            const preserved = setStageOutputInState(payload.state, stage, outputReview.original, characterIndex)
+            state = { ...preserved, _lastNode: stage }
+            if (!outputReview.firstSummaryGenerated && nextWip?.trim()) {
+              void requestReviewSummary(false)
+            }
+          } else {
+            state = { ...payload.state, _lastNode: stage }
+          }
           meta = payload.meta ?? {}
           nextStage = payload.next_stage ?? null
           // Auto-switch after manual stage run
@@ -847,13 +1102,30 @@
   async function handleModuleRun({ stage, directive, characterIndex = 0 }) {
     if (running) return
     if (!(await ensureApiReady())) return
-    await runManualStage(stage, false, directive ?? '', characterIndex)
+
+    if (stage === 'save_assets') {
+      await runManualStage(stage, false, directive ?? '', characterIndex)
+      return
+    }
+
+    if (!outputReview || outputReview.stage !== stage || outputReview.characterIndex !== characterIndex) {
+      startReview(stage, characterIndex)
+    }
+
+    const overrideState = buildStateWithReviewOutput(state, stage, characterIndex)
+    await runManualStage(stage, false, directive ?? '', characterIndex, {
+      captureToReview: true,
+      requestStateOverride: overrideState,
+    })
   }
 
-  async function handleCharacterImageGenerate({ characterIndex, promptOverride = '' }) {
+  async function handleCharacterImageGenerate({ characterIndex, promptOverride = '', mode = 'full' }) {
     if (!(await ensureApiReady())) {
       return
     }
+
+    const previousCharacter = state?.characters?.[characterIndex]
+    const previousImage = previousCharacter?.image_data || previousCharacter?.image_path || ''
 
     try {
       const res = await fetch('/api/character-image', {
@@ -866,6 +1138,9 @@
           save_pending: Boolean(pendingSave),
           character_index: characterIndex,
           prompt_override: promptOverride,
+          mode,
+          style: experimentationLive.sd?.style,
+          sd_config: experimentationLive.sd,
         }),
       })
 
@@ -877,13 +1152,48 @@
       }
 
       const data = await res.json()
+      const nextCharacter = data?.state?.characters?.[characterIndex]
+      const nextImage = nextCharacter?.image_data || nextCharacter?.image_path || ''
+
+      if ((mode === 'image' || mode === 'full') && previousImage && nextImage && previousImage !== nextImage) {
+        imageCompare = {
+          characterIndex,
+          oldCharacter: previousCharacter,
+          newCharacter: nextCharacter,
+          nextState: data.state,
+        }
+        toastMessage = 'Choose which image to keep.'
+        toastVisible = true
+        return
+      }
+
       state = { ...data.state }
-      toastMessage = 'Character image generated.'
+      if (mode === 'prompt') {
+        toastMessage = 'Image prompt regenerated.'
+      } else if (mode === 'image') {
+        toastMessage = 'Character image generated from prompt.'
+      } else {
+        toastMessage = 'Character image generated.'
+      }
       toastVisible = true
     } catch {
       toastMessage = 'Failed to generate character image.'
       toastVisible = true
     }
+  }
+
+  function keepNewImage() {
+    if (!imageCompare) return
+    state = { ...imageCompare.nextState }
+    imageCompare = null
+    toastMessage = 'Kept the new image.'
+    toastVisible = true
+  }
+
+  function keepOldImage() {
+    imageCompare = null
+    toastMessage = 'Kept the previous image.'
+    toastVisible = true
   }
 
   async function handleNextStage() {
@@ -905,6 +1215,16 @@
   async function handleContinue() {
     if (running || !canContinueStage(activeAgentTab)) return
     if (!(await ensureApiReady())) return
+
+    if (outputReview && outputReview.stage === activeAgentTab) {
+      const overrideState = buildStateWithReviewOutput(state, activeAgentTab, outputReview.characterIndex)
+      await runManualStage(activeAgentTab, true, '', outputReview.characterIndex, {
+        captureToReview: true,
+        requestStateOverride: overrideState,
+      })
+      return
+    }
+
     await runManualStage(activeAgentTab, true)
   }
 
@@ -986,6 +1306,7 @@
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     await loadExperimentation()
+    await loadSdStyles()
     await restoreOnLaunch()
     restoreDone = true
     startLlmHeartbeat()
@@ -1066,6 +1387,30 @@
   </div>
 {/if}
 
+{#if imageCompare}
+  <div class="image-compare-modal" role="dialog" aria-modal="true" aria-label="Choose image version">
+    <div class="image-compare-card">
+      <h3>Choose Image Version</h3>
+      <div class="image-compare-grid">
+        <div class="compare-item">
+          <p>Current</p>
+          {#if imageCompare.oldCharacter?.image_data || imageCompare.oldCharacter?.image_path}
+            <img src={imageCompare.oldCharacter.image_data || imageCompare.oldCharacter.image_path} alt="Current character portrait" />
+          {/if}
+          <button class="cancel-btn" onclick={keepOldImage}>Keep Current</button>
+        </div>
+        <div class="compare-item">
+          <p>New</p>
+          {#if imageCompare.newCharacter?.image_data || imageCompare.newCharacter?.image_path}
+            <img src={imageCompare.newCharacter.image_data || imageCompare.newCharacter.image_path} alt="Newly generated character portrait" />
+          {/if}
+          <button class="confirm-btn" onclick={keepNewImage}>Keep New</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <div class="app-container">
@@ -1073,12 +1418,19 @@
     bind:live={experimentationLive}
     bind:saved={experimentationSaved}
     bind:isDirty={experimentationDirty}
+    sdStyleOptions={sdStyleOptions}
     onSave={saveExperimentation}
     onCancel={cancelExperimentation}
   />
 
   <main>
-    <RawIdeaForm {running} llmConnected={apiReady()} bind:rawIdea={currentRawIdea} onrun={handleRun} />
+    <RawIdeaForm
+      {running}
+      llmConnected={apiReady()}
+      bind:rawIdea={currentRawIdea}
+      onrun={handleRun}
+      onstop={handleStopGeneration}
+    />
 
     {#if activeTab === 'agents'}
       <AgentPanel
@@ -1091,19 +1443,24 @@
         {suggesting}
         showNext={!auto}
         nextLabel={getNextButtonLabel()}
-        nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets')}
-        showStop={running}
+        nextDisabled={!nextStage || running || (!apiReady() && nextStage !== 'save_assets') || (outputReview && outputReview.stage === activeAgentTab)}
         showContinue={activeAgentTab !== 'save_assets'}
         continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
         llmConnected={apiReady()}
+        reviewState={outputReview}
+        reviewPanelOpen={reviewPanelOpen}
         onnext={handleNextStage}
-        onstop={handleStopGeneration}
         oncontinue={handleContinue}
         onsave={handleSave}
         onsuggestname={handleSuggestName}
         onrandomname={handleRandomName}
         onrunmodule={handleModuleRun}
         oncharacterimage={handleCharacterImageGenerate}
+        onapprovereview={handleApproveReview}
+        onrejectreview={handleRejectReview}
+        oneditreview={(value) => updateReviewWip(value)}
+        onregeneratesummary={regenerateReviewSummary}
+        ontogglereviewpanel={() => (reviewPanelOpen = !reviewPanelOpen)}
       />
     {:else if activeTab === 'graph'}
       <div class="graph-section">
@@ -1232,5 +1589,83 @@
 
   .restored-clear-btn:hover {
     background: #6d28d9;
+  }
+
+  .image-compare-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.72);
+    display: grid;
+    place-items: center;
+    z-index: 50;
+    padding: 1rem;
+  }
+
+  .image-compare-card {
+    width: min(960px, 100%);
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #cbd5e1;
+    padding: 1rem;
+  }
+
+  .image-compare-card h3 {
+    margin: 0 0 0.75rem;
+    color: #0f172a;
+  }
+
+  .image-compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+  }
+
+  .compare-item {
+    border: 1px solid #dbe2ea;
+    border-radius: 10px;
+    padding: 0.6rem;
+    background: #f8fafc;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .compare-item p {
+    margin: 0;
+    font-weight: 700;
+    color: #334155;
+  }
+
+  .compare-item img {
+    width: 100%;
+    max-height: 460px;
+    object-fit: contain;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .compare-item .confirm-btn,
+  .compare-item .cancel-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .compare-item .confirm-btn {
+    background: #0369a1;
+    color: #fff;
+  }
+
+  .compare-item .cancel-btn {
+    background: #64748b;
+    color: #fff;
+  }
+
+  @media (max-width: 900px) {
+    .image-compare-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

@@ -12,18 +12,23 @@
     showNext = false,
     nextLabel = 'Next',
     nextDisabled = true,
-    showStop = false,
     showContinue = false,
     continueDisabled = true,
     llmConnected = true,
+    reviewState = null,
+    reviewPanelOpen = true,
     onnext = () => {},
-    onstop = () => {},
     oncontinue = () => {},
     onsave = () => {},
     onsuggestname = () => {},
     onrandomname = () => {},
     onrunmodule = async () => {},
     oncharacterimage = async () => {},
+    onapprovereview = () => {},
+    onrejectreview = () => {},
+    oneditreview = () => {},
+    onregeneratesummary = () => {},
+    ontogglereviewpanel = () => {},
   } = $props()
 
   let worldSetting = $derived(workflowState.world_setting ?? '')
@@ -55,6 +60,7 @@
   let imageModalTitle = $state('')
   let imageGeneratingIndex = $state(null)
   let imagePromptDrafts = $state({})
+  let editingReview = $state(false)
 
   function updateWorkflow(nextState) {
     workflowState = nextState
@@ -267,6 +273,22 @@
       imageGeneratingIndex = null
     }
   }
+
+  function isReviewActiveForStage(stage, characterIndex = selectedCharacterIndex) {
+    if (!reviewState) return false
+    if (reviewState.stage !== stage) return false
+    if (stage !== 'character_designer') return true
+    return reviewState.characterIndex === characterIndex
+  }
+
+  function toggleReviewEdit() {
+    editingReview = !editingReview
+  }
+
+  $effect(() => {
+    reviewState
+    editingReview = false
+  })
 </script>
 
 <div class="agents">
@@ -294,12 +316,6 @@
     </nav>
 
     <div class="header-actions">
-      {#if showStop}
-        <button class="stop-btn" onclick={onstop} title="Stop generation" aria-label="Stop generation">
-          <span class="stop-sign">STOP</span>
-        </button>
-      {/if}
-
       {#if showContinue}
         <button class="continue-btn" onclick={oncontinue} disabled={continueDisabled || !llmConnected}>
           Continue
@@ -314,7 +330,8 @@
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel-shell">
+    <div class="panel">
     {#if activeAgent === 'loremaster'}
       <div class="module-runner">
         <label for="module-loremaster">Loremaster prompt</label>
@@ -323,6 +340,28 @@
       </div>
 
       {#if worldSetting}
+        {#if isReviewActiveForStage('loremaster')}
+          <div class="review-headline">Review Refined Output</div>
+          <div class="review-actions">
+            <button class="edit-btn" onclick={toggleReviewEdit}>{editingReview ? 'Done Editing' : 'Edit'}</button>
+            <button class="cancel-btn" onclick={onrejectreview}>Reject</button>
+            <button class="confirm-btn" onclick={onapprovereview} disabled={!reviewState?.wip?.trim()}>Approve</button>
+          </div>
+          <div class="review-compare two-col">
+            <section class="compare-col">
+              <h4>Original</h4>
+              <MarkdownBlock source={reviewState.original} />
+            </section>
+            <section class="compare-col wip">
+              <h4>Next Output</h4>
+              {#if editingReview}
+                <textarea class="edit-area" value={reviewState.wip} oninput={(event) => oneditreview(event.currentTarget.value)}></textarea>
+              {:else}
+                <MarkdownBlock source={reviewState.wip} />
+              {/if}
+            </section>
+          </div>
+        {:else}
         <div class="panel-header">
           {#if !editingLoremaster}
             <button class="edit-btn" onclick={startEditLoremaster} disabled={running}>✎ Edit</button>
@@ -335,6 +374,7 @@
           <textarea class="edit-area" bind:value={loremasterDraft}></textarea>
         {:else}
           <MarkdownBlock source={worldSetting} />
+        {/if}
         {/if}
       {:else}
         <p class="empty">{running && lastNode === 'loremaster' ? 'Generating…' : 'No output yet.'}</p>
@@ -462,6 +502,27 @@
                       <button class="confirm-btn" onclick={() => confirmEditCharacter(index)}>✔ Done</button>
                       <button class="cancel-btn" onclick={() => (editingCharacterIndex = null)}>✕</button>
                     </div>
+                  {:else if isReviewActiveForStage('character_designer', index)}
+                    <div class="review-headline">Review Refined Output</div>
+                    <div class="review-actions">
+                      <button class="edit-btn" onclick={toggleReviewEdit}>{editingReview ? 'Done Editing' : 'Edit'}</button>
+                      <button class="cancel-btn" onclick={onrejectreview}>Reject</button>
+                      <button class="confirm-btn" onclick={onapprovereview} disabled={!reviewState?.wip?.trim()}>Approve</button>
+                    </div>
+                    <div class="review-compare two-col">
+                      <section class="compare-col">
+                        <h4>Original</h4>
+                        <MarkdownBlock source={reviewState.original} />
+                      </section>
+                      <section class="compare-col wip">
+                        <h4>Next Output</h4>
+                        {#if editingReview}
+                          <textarea class="edit-area" value={reviewState.wip} oninput={(event) => oneditreview(event.currentTarget.value)}></textarea>
+                        {:else}
+                          <MarkdownBlock source={reviewState.wip} />
+                        {/if}
+                      </section>
+                    </div>
                   {:else}
                     <MarkdownBlock source={character.details} />
                   {/if}
@@ -499,11 +560,57 @@
       {#if passedInspection === true}
         <p class="passed">✓ PASSED</p>
         {#if critiqueNotes}
-          <MarkdownBlock source={critiqueNotes} />
+          {#if isReviewActiveForStage('editor')}
+            <div class="review-headline">Review Refined Output</div>
+            <div class="review-actions">
+              <button class="edit-btn" onclick={toggleReviewEdit}>{editingReview ? 'Done Editing' : 'Edit'}</button>
+              <button class="cancel-btn" onclick={onrejectreview}>Reject</button>
+              <button class="confirm-btn" onclick={onapprovereview} disabled={!reviewState?.wip?.trim()}>Approve</button>
+            </div>
+            <div class="review-compare two-col">
+              <section class="compare-col">
+                <h4>Original</h4>
+                <MarkdownBlock source={reviewState.original} />
+              </section>
+              <section class="compare-col wip">
+                <h4>Next Output</h4>
+                {#if editingReview}
+                  <textarea class="edit-area" value={reviewState.wip} oninput={(event) => oneditreview(event.currentTarget.value)}></textarea>
+                {:else}
+                  <MarkdownBlock source={reviewState.wip} />
+                {/if}
+              </section>
+            </div>
+          {:else}
+            <MarkdownBlock source={critiqueNotes} />
+          {/if}
         {/if}
       {:else if passedInspection === false && critiqueNotes}
         <p class="failed">✗ Needs revision</p>
-        <MarkdownBlock source={critiqueNotes} />
+        {#if isReviewActiveForStage('editor')}
+          <div class="review-headline">Review Refined Output</div>
+          <div class="review-actions">
+            <button class="edit-btn" onclick={toggleReviewEdit}>{editingReview ? 'Done Editing' : 'Edit'}</button>
+            <button class="cancel-btn" onclick={onrejectreview}>Reject</button>
+            <button class="confirm-btn" onclick={onapprovereview} disabled={!reviewState?.wip?.trim()}>Approve</button>
+          </div>
+          <div class="review-compare two-col">
+            <section class="compare-col">
+              <h4>Original</h4>
+              <MarkdownBlock source={reviewState.original} />
+            </section>
+            <section class="compare-col wip">
+              <h4>Next Output</h4>
+              {#if editingReview}
+                <textarea class="edit-area" value={reviewState.wip} oninput={(event) => oneditreview(event.currentTarget.value)}></textarea>
+              {:else}
+                <MarkdownBlock source={reviewState.wip} />
+              {/if}
+            </section>
+          </div>
+        {:else}
+          <MarkdownBlock source={critiqueNotes} />
+        {/if}
       {:else}
         <p class="empty">{running && lastNode === 'editor' ? 'Reviewing…' : 'No output yet.'}</p>
       {/if}
@@ -545,6 +652,29 @@
         <p class="empty">Waiting for editor pass.</p>
       {/if}
     {/if}
+    </div>
+
+    <aside class="review-panel" class:closed={!reviewPanelOpen}>
+      <header class="review-panel-header">
+        <h3>Summary</h3>
+        <button class="collapse-side-btn" onclick={ontogglereviewpanel}>{reviewPanelOpen ? '⟩' : '⟨'}</button>
+      </header>
+      {#if reviewPanelOpen}
+        {#if reviewState}
+          <div class="summary-box">
+            {#if reviewState.summaryLoading}
+              <p class="summary-loading">Generating narrative summary…</p>
+            {/if}
+            <div class="summary-content" aria-label="Revision summary">
+              <MarkdownBlock source={reviewState.summary} />
+            </div>
+            <button class="module-btn" onclick={onregeneratesummary} disabled={reviewState.summaryLoading}>Regenerate Summary</button>
+          </div>
+        {:else}
+          <p class="empty">Run a refinement prompt to generate a review summary.</p>
+        {/if}
+      {/if}
+    </aside>
   </div>
 </div>
 
@@ -614,21 +744,6 @@
   .add-char-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .stop-btn {
-    border: none;
-    background: transparent;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .stop-sign {
-    width: 2.2rem;
-    height: 2.2rem;
-    clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
-    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
-    border: 2px solid #7f1d1d;
   }
 
   .image-button-group {
@@ -738,12 +853,134 @@
     50% { opacity: 0; }
   }
 
+  .panel-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 0.85rem;
+    align-items: start;
+  }
+
   .panel {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     padding: 1rem;
     min-height: 220px;
+  }
+
+  .review-panel {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 0.8rem;
+    position: sticky;
+    top: 0.5rem;
+  }
+
+  .review-panel.closed {
+    width: 58px;
+    padding: 0.6rem 0.45rem;
+  }
+
+  .review-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .review-panel-header h3 {
+    margin: 0;
+    font-size: 0.92rem;
+    color: #1e293b;
+  }
+
+  .collapse-side-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 8px;
+    width: 1.9rem;
+    height: 1.9rem;
+    cursor: pointer;
+  }
+
+  .summary-box {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .summary-loading {
+    margin: 0;
+    font-size: 0.72rem;
+    color: #1d4ed8;
+    font-weight: 600;
+  }
+
+  .summary-content {
+    max-height: calc(14 * 1.35em);
+    overflow-y: auto;
+    padding-right: 0.35rem;
+    border: 1px solid #dbe7f6;
+    border-radius: 8px;
+    background: #ffffff;
+  }
+
+  .summary-content :global(p),
+  .summary-content :global(li),
+  .summary-content :global(blockquote),
+  .summary-content :global(code) {
+    font-size: 0.74rem;
+    line-height: 1.35;
+  }
+
+  .summary-content :global(ul),
+  .summary-content :global(ol) {
+    margin: 0.35rem 0;
+    padding-left: 1rem;
+  }
+
+  .review-headline {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 0.4rem;
+  }
+
+  .review-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .review-compare {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .compare-col {
+    padding: 0.75rem;
+    min-height: 130px;
+  }
+
+  .compare-col h4 {
+    margin: 0 0 0.55rem;
+    font-size: 0.8rem;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .compare-col.wip {
+    border-left: 1px solid #cbd5e1;
+    background: #eff6ff;
   }
 
   .module-runner {
@@ -1145,6 +1382,27 @@
     .character-actions {
       width: 100%;
       justify-content: flex-end;
+    }
+  }
+
+  @media (max-width: 1040px) {
+    .panel-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .review-panel {
+      position: static;
+    }
+  }
+
+  @media (max-width: 780px) {
+    .two-col {
+      grid-template-columns: 1fr;
+    }
+
+    .compare-col.wip {
+      border-left: none;
+      border-top: 1px solid #cbd5e1;
     }
   }
 </style>
