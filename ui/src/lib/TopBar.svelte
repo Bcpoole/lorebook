@@ -2,7 +2,7 @@
   let {
     showStats = $bindable(false),
     streaming = $bindable(true),
-    autoSave = $bindable(false),
+    auto = $bindable(false),
     meta = {},
     ongraph = () => {},
   } = $props()
@@ -13,13 +13,13 @@
 
   <div class="controls">
     <label class="toggle">
-      <input type="checkbox" bind:checked={streaming} />
-      Stream
+      <input type="checkbox" bind:checked={auto} />
+      Auto
     </label>
 
     <label class="toggle">
-      <input type="checkbox" bind:checked={autoSave} />
-      Auto-save
+      <input type="checkbox" bind:checked={streaming} />
+      Stream
     </label>
 
     <label class="toggle">

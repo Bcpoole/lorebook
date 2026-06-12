@@ -91,4 +91,4 @@ def test_editor_node_offline_passed(monkeypatch) -> None:
     }
     out = editor_node(state)
     assert out["passed_inspection"] is True
-    assert out["critique_notes"] == ""
+    assert out["critique_notes"] == "PASSED"

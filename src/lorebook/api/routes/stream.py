@@ -119,7 +119,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
 
         passed = "PASSED" in critique_notes
         state["passed_inspection"] = passed
-        state["critique_notes"] = "" if passed else critique_notes
+        state["critique_notes"] = critique_notes
         yield {
             "event": "node-complete",
             "data": json.dumps(
@@ -127,7 +127,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                     "node": "editor",
                     "output": {
                         "passed_inspection": passed,
-                        "critique_notes": "" if passed else critique_notes,
+                        "critique_notes": critique_notes,
                     },
                 }
             ),

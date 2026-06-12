@@ -8,11 +8,13 @@
   let meta = $state({})
   let running = $state(false)
   let streaming = $state(true)
-  let autoSave = $state(false)
+  let auto = $state(false)
   let showStats = $state(false)
   let activeTab = $state('agents')
   let activeAgentTab = $state('loremaster')
   let graphPanelLoad = $state(null)
+  let currentRawIdea = $state('')
+  let nextStage = $state(null)
 
   let pendingSave = $state(null)
   let savedRun = $state(null)
@@ -20,15 +22,80 @@
   let suggesting = $state(false)
   let toastMessage = $state('')
   let toastVisible = $state(false)
+  let activeEventSource = $state(null)
+  let activeAbortController = $state(null)
 
   function generateDefaultFilename() {
     return crypto.randomUUID().replace(/-/g, '')
+  }
+
+  function stageLabel(stage) {
+    const labels = {
+      loremaster: 'Loremaster',
+      character_designer: 'Character Designer',
+      editor: 'Editor',
+      save_assets: 'Save Assets',
+    }
+    return labels[stage] ?? 'Next'
+  }
+
+  function getNextButtonLabel() {
+    if (!nextStage) return 'Next'
+    return `Next: ${stageLabel(nextStage)}`
+  }
+
+  function canContinueStage(stage) {
+    if (stage === 'loremaster') return Boolean(state.world_setting)
+    if (stage === 'character_designer') return Boolean(state.characters?.[0]?.details)
+    if (stage === 'editor') return Boolean(state.critique_notes) && state.passed_inspection !== true
+    return false
+  }
+
+  async function setSmartFilename(rawIdea) {
+    try {
+      const res = await fetch('/api/suggest-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_idea: rawIdea }),
+      })
+      const data = await res.json()
+      filename = data.name
+    } catch {
+      filename = generateDefaultFilename()
+    }
   }
 
   function openGraphTab() {
     activeTab = 'graph'
     if (!graphPanelLoad) {
       graphPanelLoad = import('./lib/GraphPanel.svelte')
+    }
+  }
+
+  function clearActiveHandles() {
+    activeEventSource = null
+    activeAbortController = null
+  }
+
+  function isAbortError(error) {
+    return error?.name === 'AbortError'
+  }
+
+  function stopGeneration(showToast = true) {
+    if (activeEventSource) {
+      activeEventSource.close()
+      activeEventSource = null
+    }
+
+    if (activeAbortController) {
+      activeAbortController.abort()
+      activeAbortController = null
+    }
+
+    running = false
+    if (showToast) {
+      toastMessage = 'Generation stopped.'
+      toastVisible = true
     }
   }
 
@@ -72,17 +139,26 @@
   }
 
   async function handleRun({ rawIdea }) {
+    stopGeneration(false)
+    currentRawIdea = rawIdea
     state = {}
     meta = {}
     pendingSave = null
     savedRun = null
     filename = ''
+    nextStage = null
     running = true
     activeAgentTab = 'loremaster'
 
+    if (!auto) {
+      await runManualStage('loremaster')
+      return
+    }
+
     if (streaming) {
-      const params = new URLSearchParams({ raw_idea: rawIdea, auto_save: String(autoSave) })
+      const params = new URLSearchParams({ raw_idea: rawIdea, auto_save: 'true' })
       const es = new EventSource(`/api/stream?${params}`)
+      activeEventSource = es
 
       es.addEventListener('node-start', (e) => {
         const { node } = JSON.parse(e.data)
@@ -102,7 +178,7 @@
       es.addEventListener('save-pending', (e) => {
         const data = JSON.parse(e.data)
         pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
-        filename = generateDefaultFilename()
+        void setSmartFilename(rawIdea)
         toastMessage = 'Save Assets is ready.'
         toastVisible = true
       })
@@ -119,34 +195,202 @@
 
       es.addEventListener('done', () => {
         es.close()
+        activeEventSource = null
         running = false
       })
 
       es.onerror = () => {
         es.close()
+        activeEventSource = null
         running = false
       }
     } else {
-      const res = await fetch('/api/run', {
+      const controller = new AbortController()
+      activeAbortController = controller
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw_idea: rawIdea, auto_save: true }),
+          signal: controller.signal,
+        })
+        const data = await res.json()
+        state = data.state
+        meta = data.meta
+        if (data.pending_save) {
+          pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
+          await setSmartFilename(rawIdea)
+          toastMessage = 'Save Assets is ready.'
+          toastVisible = true
+        } else {
+          savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
+          toastMessage = `Auto-saved as ${data.filename}`
+          toastVisible = true
+        }
+      } catch (error) {
+        if (!isAbortError(error)) {
+          toastMessage = 'Run failed. Please try again.'
+          toastVisible = true
+        }
+      } finally {
+        activeAbortController = null
+        running = false
+      }
+    }
+  }
+
+  async function runManualStage(stage, continueOutput = false) {
+    activeAgentTab = stage
+    state = { ...state, _lastNode: stage }
+    running = true
+
+    if (streaming) {
+      await runManualStageStreaming(stage, continueOutput)
+      return
+    }
+
+    const controller = new AbortController()
+    activeAbortController = controller
+    try {
+      const res = await fetch('/api/step', {
+        signal: controller.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_idea: rawIdea, auto_save: autoSave }),
+        body: JSON.stringify({ raw_idea: currentRawIdea, state, stage, continue_output: continueOutput }),
       })
+
+      if (!res.ok) {
+        toastMessage = `Failed to run ${stageLabel(stage)}.`
+        toastVisible = true
+        return
+      }
+
       const data = await res.json()
-      state = data.state
+      state = { ...data.state, _lastNode: stage }
       meta = data.meta
-      if (data.pending_save) {
-        pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
-        filename = generateDefaultFilename()
+      nextStage = data.next_stage ?? null
+
+      if (data.save_pending) {
+        pendingSave = { raw_idea: currentRawIdea, state: data.state, meta: data.meta }
+        await setSmartFilename(currentRawIdea)
         toastMessage = 'Save Assets is ready.'
         toastVisible = true
-      } else {
-        savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
-        toastMessage = `Auto-saved as ${data.filename}`
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
+        toastMessage = `Failed to run ${stageLabel(stage)}.`
         toastVisible = true
       }
+    } finally {
+      activeAbortController = null
       running = false
     }
+  }
+
+  async function runManualStageStreaming(stage, continueOutput = false) {
+    const controller = new AbortController()
+    activeAbortController = controller
+    try {
+      const res = await fetch('/api/step-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_idea: currentRawIdea, state, stage, continue_output: continueOutput }),
+        signal: controller.signal,
+      })
+
+      if (!res.ok || !res.body) {
+        toastMessage = `Failed to stream ${stageLabel(stage)}.`
+        toastVisible = true
+        return
+      }
+
+      const decoder = new TextDecoder()
+      const reader = res.body.getReader()
+      let buffer = ''
+
+    const processEvent = async (rawEvent) => {
+      const lines = rawEvent.split('\n')
+      let eventName = 'message'
+      let data = ''
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          data += `${line.slice(5).trim()}\n`
+        }
+      }
+
+      if (!data) return
+      const payload = JSON.parse(data.trim())
+
+      if (eventName === 'node-start') {
+        state = { ...state, _lastNode: payload.node }
+      } else if (eventName === 'node-token') {
+        state = applyStreamingChunk(payload.node, payload.chunk)
+      } else if (eventName === 'node-complete') {
+        state = { ...state, ...payload.output, _lastNode: payload.node }
+      } else if (eventName === 'step-complete') {
+        state = { ...payload.state, _lastNode: stage }
+        meta = payload.meta ?? {}
+        nextStage = payload.next_stage ?? null
+        if (payload.save_pending) {
+          pendingSave = { raw_idea: currentRawIdea, state: payload.state, meta: payload.meta ?? {} }
+          await setSmartFilename(currentRawIdea)
+          toastMessage = 'Save Assets is ready.'
+          toastVisible = true
+        }
+      } else if (eventName === 'done') {
+        running = false
+      }
+    }
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        buffer = buffer.replace(/\r/g, '')
+
+        let splitIndex = buffer.indexOf('\n\n')
+        while (splitIndex !== -1) {
+          const rawEvent = buffer.slice(0, splitIndex).trim()
+          buffer = buffer.slice(splitIndex + 2)
+          if (rawEvent) {
+            await processEvent(rawEvent)
+          }
+          splitIndex = buffer.indexOf('\n\n')
+        }
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
+        toastMessage = `Failed to stream ${stageLabel(stage)}.`
+        toastVisible = true
+      }
+    } finally {
+      activeAbortController = null
+      running = false
+    }
+  }
+
+  async function handleNextStage() {
+    if (!nextStage || running) return
+
+    if (nextStage === 'save_assets') {
+      activeAgentTab = 'save_assets'
+      nextStage = null
+      return
+    }
+
+    await runManualStage(nextStage)
+  }
+
+  async function handleContinue() {
+    if (running || !canContinueStage(activeAgentTab)) return
+    await runManualStage(activeAgentTab, true)
+  }
+
+  function handleStopGeneration() {
+    stopGeneration(true)
+    clearActiveHandles()
   }
 
   async function handleSave(fname) {
@@ -166,20 +410,18 @@
     if (!pendingSave) return
     suggesting = true
     try {
-      const res = await fetch('/api/suggest-name', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_idea: pendingSave.raw_idea }),
-      })
-      const data = await res.json()
-      filename = data.name
+      await setSmartFilename(pendingSave.raw_idea)
     } finally {
       suggesting = false
     }
   }
+
+  function handleRandomName() {
+    filename = generateDefaultFilename()
+  }
 </script>
 
-<TopBar bind:showStats bind:streaming bind:autoSave {meta} ongraph={openGraphTab} />
+<TopBar bind:showStats bind:streaming bind:auto {meta} ongraph={openGraphTab} />
 
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
@@ -195,8 +437,18 @@
       {savedRun}
       bind:filename
       {suggesting}
+      showNext={!auto}
+      nextLabel={getNextButtonLabel()}
+      nextDisabled={!nextStage || running}
+      showStop={running}
+      showContinue={activeAgentTab !== 'save_assets'}
+      continueDisabled={!canContinueStage(activeAgentTab) || running}
+      onnext={handleNextStage}
+      onstop={handleStopGeneration}
+      oncontinue={handleContinue}
       onsave={handleSave}
       onsuggestname={handleSuggestName}
+      onrandomname={handleRandomName}
     />
   {:else if activeTab === 'graph'}
     <div class="graph-section">

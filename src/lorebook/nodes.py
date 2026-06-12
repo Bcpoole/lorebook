@@ -37,7 +37,7 @@ def editor_node(state: WizardState) -> Dict[str, str | bool]:
     result = call_local_llm(system_prompt, prompt)
 
     if "PASSED" in result:
-        return {"passed_inspection": True, "critique_notes": ""}
+        return {"passed_inspection": True, "critique_notes": result}
     return {"passed_inspection": False, "critique_notes": result}
 
 
