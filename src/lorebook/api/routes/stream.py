@@ -8,7 +8,8 @@ from typing import AsyncIterator, Dict
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
-from lorebook.api.storage import save_run_result
+from lorebook.characters import infer_character_name, should_replace_character_name
+from lorebook.api.storage import save_draft_state, save_run_result
 from lorebook.llm import stream_local_llm
 from lorebook.state import WizardState
 
@@ -40,6 +41,26 @@ def _empty_state(raw_idea: str) -> WizardState:
         "critique_notes": "",
         "passed_inspection": False,
     }
+
+
+def _upsert_first_character(state: WizardState, details: str) -> None:
+    existing = list(state.get("characters", []))
+    if existing:
+        first = {**existing[0], "details": details}
+        if should_replace_character_name(first.get("name", "")):
+            first["name"] = infer_character_name(details, fallback="Character 1")
+        state["characters"] = [first, *existing[1:]]
+        return
+    state["characters"] = [{"name": infer_character_name(details, fallback="Character 1"), "details": details}]
+
+
+def _editor_prompt(state: WizardState) -> str:
+    sections = []
+    for index, character in enumerate(state.get("characters", []), start=1):
+        name = character.get("name") or f"Companion {index}"
+        details = character.get("details", "")
+        sections.append(f"Character {index} - {name}:\n{details}")
+    return f"Setting:\n{state['world_setting']}\n\nCharacters:\n{'\n\n'.join(sections)}"
 
 
 def _tokens(env_var: str, default: int) -> int:
@@ -93,16 +114,25 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "event": "node-token",
                 "data": json.dumps({"node": "character_designer", "chunk": chunk}),
             }
-        state["characters"] = [{"name": "Companion", "details": character_details}]
+        _upsert_first_character(state, character_details)
         yield {
             "event": "node-complete",
             "data": json.dumps(
                 {
                     "node": "character_designer",
-                    "output": {"characters": [{"name": "Companion", "details": character_details}]},
+                    "output": {"characters": state["characters"]},
                 }
             ),
         }
+
+        save_draft_state(
+            {
+                "raw_idea": raw_idea,
+                "state": state,
+                "meta": {"streaming": True, "stage": "character_designer"},
+                "save_pending": False,
+            }
+        )
 
         if not await ensure_connected():
             return
@@ -110,7 +140,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # editor
         yield {"event": "node-start", "data": json.dumps({"node": "editor"})}
         critique_notes = ""
-        prompt = f"Setting:\n{state['world_setting']}\n\nCharacter:\n{character_details}"
+        prompt = _editor_prompt(state)
         for chunk in stream_local_llm(EDITOR_SYSTEM, prompt, max_length=EDITOR_MAX_TOKENS):
             if not await ensure_connected():
                 return
@@ -133,6 +163,15 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
             ),
         }
 
+        save_draft_state(
+            {
+                "raw_idea": raw_idea,
+                "state": state,
+                "meta": {"streaming": True, "stage": "editor"},
+                "save_pending": bool(passed),
+            }
+        )
+
         if passed:
             break
 
@@ -144,6 +183,14 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "raw_idea": raw_idea,
                 "state": state,
                 "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
+            }
+        )
+        save_draft_state(
+            {
+                "raw_idea": raw_idea,
+                "state": state,
+                "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
+                "save_pending": False,
             }
         )
         yield {
@@ -159,6 +206,14 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
             ),
         }
     else:
+        save_draft_state(
+            {
+                "raw_idea": raw_idea,
+                "state": state,
+                "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
+                "save_pending": True,
+            }
+        )
         yield {
             "event": "save-pending",
             "data": json.dumps(

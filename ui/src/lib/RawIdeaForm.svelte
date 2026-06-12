@@ -1,7 +1,5 @@
 <script>
-  let { running = false, onrun } = $props()
-
-  let rawIdea = $state('')
+  let { running = false, rawIdea = $bindable(''), onrun } = $props()
 
   function submit() {
     if (!rawIdea.trim() || running) return

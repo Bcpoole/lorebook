@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from lorebook.characters import infer_character_name
 from lorebook.nodes import character_designer_node, editor_node, loremaster_node
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
@@ -48,7 +49,8 @@ def test_character_designer_uses_saved_real_output(monkeypatch) -> None:
         "passed_inspection": False,
     }
     out = character_designer_node(state)
-    assert out["characters"][0]["name"] == "Companion"
+    assert out["characters"][0]["name"] == infer_character_name(expected, fallback="Character 1")
+    assert out["characters"][0]["name"] != "Companion"
     assert out["characters"][0]["details"] == expected
 
 
@@ -92,3 +94,29 @@ def test_editor_node_offline_passed(monkeypatch) -> None:
     out = editor_node(state)
     assert out["passed_inspection"] is True
     assert out["critique_notes"] == "PASSED"
+
+
+def test_editor_node_uses_all_characters(monkeypatch) -> None:
+    captured = {"prompt": ""}
+
+    def fake_llm(system_prompt: str, user_prompt: str) -> str:
+        _ = system_prompt
+        captured["prompt"] = user_prompt
+        return "PASSED"
+
+    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+
+    state = {
+        "raw_idea": "",
+        "world_setting": "fixture world",
+        "characters": [
+            {"name": "A", "details": "first details"},
+            {"name": "B", "details": "second details"},
+        ],
+        "critique_notes": "",
+        "passed_inspection": False,
+    }
+    out = editor_node(state)
+    assert out["passed_inspection"] is True
+    assert "first details" in captured["prompt"]
+    assert "second details" in captured["prompt"]

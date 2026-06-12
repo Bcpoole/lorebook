@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from .characters import infer_character_name, should_replace_character_name
 from .llm import call_local_llm
 from .state import WizardState
 
@@ -21,7 +22,13 @@ def character_designer_node(state: WizardState) -> Dict[str, list[Dict[str, str]
         "character based on this world setting. Format as clean text."
     )
     result = call_local_llm(system_prompt, state["world_setting"])
-    return {"characters": [{"name": "Companion", "details": result}]}
+    existing = state.get("characters") or []
+    if existing:
+        first = {**existing[0], "details": result}
+        if should_replace_character_name(first.get("name", "")):
+            first["name"] = infer_character_name(result, fallback="Character 1")
+        return {"characters": [first, *existing[1:]]}
+    return {"characters": [{"name": infer_character_name(result, fallback="Character 1"), "details": result}]}
 
 
 def editor_node(state: WizardState) -> Dict[str, str | bool]:
@@ -30,9 +37,14 @@ def editor_node(state: WizardState) -> Dict[str, str | bool]:
         "world setting. If it feels generic or breaks the world rules, write "
         "critique. If it is excellent, reply exactly with: PASSED."
     )
+    character_sections = []
+    for index, character in enumerate(state.get("characters", []), start=1):
+        name = character.get("name") or f"Companion {index}"
+        details = character.get("details", "")
+        character_sections.append(f"Character {index} - {name}:\n{details}")
     prompt = (
         f"Setting:\n{state['world_setting']}\n\n"
-        f"Character:\n{state['characters'][0]['details']}"
+        f"Characters:\n{'\n\n'.join(character_sections)}"
     )
     result = call_local_llm(system_prompt, prompt)
 

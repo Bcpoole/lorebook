@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte'
   import RawIdeaForm from './lib/RawIdeaForm.svelte'
   import AgentPanel from './lib/AgentPanel.svelte'
   import TopBar from './lib/TopBar.svelte'
@@ -24,6 +25,9 @@
   let toastVisible = $state(false)
   let activeEventSource = $state(null)
   let activeAbortController = $state(null)
+  let restoreDone = $state(false)
+  let draftPersistTimer = null
+  let restoreToastTimer = null
 
   function generateDefaultFilename() {
     return crypto.randomUUID().replace(/-/g, '')
@@ -44,11 +48,99 @@
     return `Next: ${stageLabel(nextStage)}`
   }
 
+  function freshWorkflowState(rawIdea = '') {
+    return {
+      raw_idea: rawIdea,
+      world_setting: '',
+      characters: [],
+      critique_notes: '',
+      passed_inspection: false,
+    }
+  }
+
   function canContinueStage(stage) {
     if (stage === 'loremaster') return Boolean(state.world_setting)
-    if (stage === 'character_designer') return Boolean(state.characters?.[0]?.details)
+    if (stage === 'character_designer') return Boolean(state.characters?.some((character) => character?.details))
     if (stage === 'editor') return Boolean(state.critique_notes) && state.passed_inspection !== true
     return false
+  }
+
+  function getStageFromState(localState, savePending = false) {
+    if (savePending) return 'save_assets'
+    // On restore, keep navigation predictable by landing on Loremaster.
+    // Users can still switch tabs manually.
+    return 'loremaster'
+  }
+
+  function applyRestoredPayload(payload, source = 'draft') {
+    if (!payload) return false
+
+    currentRawIdea = payload.raw_idea ?? ''
+    state = payload.state ?? {}
+    meta = payload.meta ?? {}
+    pendingSave = payload.save_pending ? { raw_idea: currentRawIdea, state, meta } : null
+    savedRun = source === 'run' && payload.run_id ? {
+      run_id: payload.run_id,
+      run_path: payload.run_path,
+      filename: payload.filename ?? payload.run_id,
+    } : null
+    nextStage = payload.meta?.next_stage ?? null
+    activeAgentTab = getStageFromState(state, Boolean(payload.save_pending))
+    filename = ''
+    return true
+  }
+
+  function showRestoreToast(message) {
+    toastMessage = message
+    toastVisible = true
+    if (restoreToastTimer) {
+      clearTimeout(restoreToastTimer)
+    }
+    restoreToastTimer = setTimeout(() => {
+      toastVisible = false
+      restoreToastTimer = null
+    }, 3000)
+  }
+
+  function scheduleDraftPersist() {
+    if (!restoreDone) return
+    if (draftPersistTimer) {
+      clearTimeout(draftPersistTimer)
+    }
+
+    draftPersistTimer = setTimeout(async () => {
+      if (!currentRawIdea && !state?.world_setting && !(state?.characters?.length) && !state?.critique_notes) {
+        return
+      }
+      try {
+        await fetch('/api/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            raw_idea: currentRawIdea,
+            state,
+            meta,
+            save_pending: Boolean(pendingSave),
+          }),
+        })
+      } catch {
+        // Best-effort draft sync should not interrupt the UI.
+      }
+    }, 300)
+  }
+
+  async function restoreOnLaunch() {
+    try {
+      const res = await fetch('/api/restore-latest')
+      if (!res.ok) return
+      const data = await res.json()
+      if (!data?.draft) return
+
+      applyRestoredPayload(data.draft, 'draft')
+      showRestoreToast('Restored latest in-progress draft.')
+    } catch {
+      // Ignore restore failures.
+    }
   }
 
   async function setSmartFilename(rawIdea) {
@@ -111,7 +203,7 @@
     if (node === 'character_designer') {
       const characters = [...(state.characters ?? [])]
       if (characters.length === 0) {
-        characters.push({ name: 'Companion', details: '' })
+        characters.push({ name: 'Companion 1', details: '' })
       }
       characters[0] = {
         ...characters[0],
@@ -141,7 +233,7 @@
   async function handleRun({ rawIdea }) {
     stopGeneration(false)
     currentRawIdea = rawIdea
-    state = {}
+    state = freshWorkflowState(rawIdea)
     meta = {}
     pendingSave = null
     savedRun = null
@@ -188,6 +280,7 @@
         state = data.state
         meta = data.meta
         savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
+        pendingSave = null
         toastMessage = `Auto-saved as ${data.filename}`
         toastVisible = true
         running = false
@@ -223,6 +316,7 @@
           toastMessage = 'Save Assets is ready.'
           toastVisible = true
         } else {
+          pendingSave = null
           savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
           toastMessage = `Auto-saved as ${data.filename}`
           toastVisible = true
@@ -239,13 +333,13 @@
     }
   }
 
-  async function runManualStage(stage, continueOutput = false) {
+  async function runManualStage(stage, continueOutput = false, directive = '', characterIndex = 0) {
     activeAgentTab = stage
     state = { ...state, _lastNode: stage }
     running = true
 
     if (streaming) {
-      await runManualStageStreaming(stage, continueOutput)
+      await runManualStageStreaming(stage, continueOutput, directive, characterIndex)
       return
     }
 
@@ -256,7 +350,14 @@
         signal: controller.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_idea: currentRawIdea, state, stage, continue_output: continueOutput }),
+        body: JSON.stringify({
+          raw_idea: currentRawIdea,
+          state,
+          stage,
+          continue_output: continueOutput,
+          directive,
+          character_index: characterIndex,
+        }),
       })
 
       if (!res.ok) {
@@ -287,14 +388,21 @@
     }
   }
 
-  async function runManualStageStreaming(stage, continueOutput = false) {
+  async function runManualStageStreaming(stage, continueOutput = false, directive = '', characterIndex = 0) {
     const controller = new AbortController()
     activeAbortController = controller
     try {
       const res = await fetch('/api/step-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_idea: currentRawIdea, state, stage, continue_output: continueOutput }),
+        body: JSON.stringify({
+          raw_idea: currentRawIdea,
+          state,
+          stage,
+          continue_output: continueOutput,
+          directive,
+          character_index: characterIndex,
+        }),
         signal: controller.signal,
       })
 
@@ -308,41 +416,41 @@
       const reader = res.body.getReader()
       let buffer = ''
 
-    const processEvent = async (rawEvent) => {
-      const lines = rawEvent.split('\n')
-      let eventName = 'message'
-      let data = ''
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-          eventName = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          data += `${line.slice(5).trim()}\n`
+      const processEvent = async (rawEvent) => {
+        const lines = rawEvent.split('\n')
+        let eventName = 'message'
+        let data = ''
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim()
+          } else if (line.startsWith('data:')) {
+            data += `${line.slice(5).trim()}\n`
+          }
+        }
+
+        if (!data) return
+        const payload = JSON.parse(data.trim())
+
+        if (eventName === 'node-start') {
+          state = { ...state, _lastNode: payload.node }
+        } else if (eventName === 'node-token') {
+          state = applyStreamingChunk(payload.node, payload.chunk)
+        } else if (eventName === 'node-complete') {
+          state = { ...state, ...payload.output, _lastNode: payload.node }
+        } else if (eventName === 'step-complete') {
+          state = { ...payload.state, _lastNode: stage }
+          meta = payload.meta ?? {}
+          nextStage = payload.next_stage ?? null
+          if (payload.save_pending) {
+            pendingSave = { raw_idea: currentRawIdea, state: payload.state, meta: payload.meta ?? {} }
+            await setSmartFilename(currentRawIdea)
+            toastMessage = 'Save Assets is ready.'
+            toastVisible = true
+          }
+        } else if (eventName === 'done') {
+          running = false
         }
       }
-
-      if (!data) return
-      const payload = JSON.parse(data.trim())
-
-      if (eventName === 'node-start') {
-        state = { ...state, _lastNode: payload.node }
-      } else if (eventName === 'node-token') {
-        state = applyStreamingChunk(payload.node, payload.chunk)
-      } else if (eventName === 'node-complete') {
-        state = { ...state, ...payload.output, _lastNode: payload.node }
-      } else if (eventName === 'step-complete') {
-        state = { ...payload.state, _lastNode: stage }
-        meta = payload.meta ?? {}
-        nextStage = payload.next_stage ?? null
-        if (payload.save_pending) {
-          pendingSave = { raw_idea: currentRawIdea, state: payload.state, meta: payload.meta ?? {} }
-          await setSmartFilename(currentRawIdea)
-          toastMessage = 'Save Assets is ready.'
-          toastVisible = true
-        }
-      } else if (eventName === 'done') {
-        running = false
-      }
-    }
 
       while (true) {
         const { value, done } = await reader.read()
@@ -368,6 +476,43 @@
     } finally {
       activeAbortController = null
       running = false
+    }
+  }
+
+  async function handleModuleRun({ stage, directive, characterIndex = 0 }) {
+    if (running) return
+    await runManualStage(stage, false, directive ?? '', characterIndex)
+  }
+
+  async function handleCharacterImageGenerate({ characterIndex, promptOverride = '' }) {
+    try {
+      const res = await fetch('/api/character-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_idea: currentRawIdea,
+          state,
+          meta,
+          save_pending: Boolean(pendingSave),
+          character_index: characterIndex,
+          prompt_override: promptOverride,
+        }),
+      })
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null)
+        toastMessage = errorPayload?.detail || 'Failed to generate character image.'
+        toastVisible = true
+        return
+      }
+
+      const data = await res.json()
+      state = { ...data.state }
+      toastMessage = 'Character image generated.'
+      toastVisible = true
+    } catch {
+      toastMessage = 'Failed to generate character image.'
+      toastVisible = true
     }
   }
 
@@ -402,6 +547,7 @@
     })
     const data = await res.json()
     savedRun = data
+    pendingSave = null
     toastMessage = `Saved as ${data.filename}`
     toastVisible = true
   }
@@ -419,6 +565,16 @@
   function handleRandomName() {
     filename = generateDefaultFilename()
   }
+
+  onMount(async () => {
+    await restoreOnLaunch()
+    restoreDone = true
+  })
+
+  $effect(() => {
+    if (!restoreDone) return
+    scheduleDraftPersist()
+  })
 </script>
 
 <TopBar bind:showStats bind:streaming bind:auto {meta} ongraph={openGraphTab} />
@@ -426,11 +582,11 @@
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <main>
-  <RawIdeaForm {running} onrun={handleRun} />
+  <RawIdeaForm {running} bind:rawIdea={currentRawIdea} onrun={handleRun} />
 
   {#if activeTab === 'agents'}
     <AgentPanel
-      workflowState={state}
+      bind:workflowState={state}
       {running}
       bind:activeAgent={activeAgentTab}
       {pendingSave}
@@ -449,6 +605,8 @@
       onsave={handleSave}
       onsuggestname={handleSuggestName}
       onrandomname={handleRandomName}
+      onrunmodule={handleModuleRun}
+      oncharacterimage={handleCharacterImageGenerate}
     />
   {:else if activeTab === 'graph'}
     <div class="graph-section">
@@ -471,7 +629,7 @@
 
 <style>
   main {
-    max-width: 960px;
+    max-width: 1080px;
     margin: 0 auto;
     padding: 1rem;
     font-family: system-ui, sans-serif;

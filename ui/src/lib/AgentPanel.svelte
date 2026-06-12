@@ -21,6 +21,8 @@
     onsave = () => {},
     onsuggestname = () => {},
     onrandomname = () => {},
+    onrunmodule = async () => {},
+    oncharacterimage = async () => {},
   } = $props()
 
   let worldSetting = $derived(workflowState.world_setting ?? '')
@@ -36,11 +38,26 @@
     save_assets: 'Save Assets',
   }
 
-  // Edit state
   let editingLoremaster = $state(false)
-  let editingCharacter = $state(false)
   let loremasterDraft = $state('')
+
+  let modulePromptLoremaster = $state('')
+  let modulePromptCharacter = $state('')
+  let modulePromptEditor = $state('')
+
+  let editingCharacterIndex = $state(null)
   let characterDraft = $state('')
+  let selectedCharacterIndex = $state(0)
+  let collapsed = $state({})
+  let confirmDeleteIndex = $state(null)
+  let imageModalSrc = $state('')
+  let imageModalTitle = $state('')
+  let imageGeneratingIndex = $state(null)
+  let imagePromptDrafts = $state({})
+
+  function updateWorkflow(nextState) {
+    workflowState = nextState
+  }
 
   function startEditLoremaster() {
     loremasterDraft = worldSetting
@@ -48,21 +65,124 @@
   }
 
   function confirmEditLoremaster() {
-    workflowState = { ...workflowState, world_setting: loremasterDraft }
+    updateWorkflow({ ...workflowState, world_setting: loremasterDraft })
     editingLoremaster = false
   }
 
-  function startEditCharacter() {
-    characterDraft = characters[0]?.details ?? ''
-    editingCharacter = true
+  function ensureCharacterIndex(index) {
+    if (index < 0) return 0
+    if (index >= characters.length) return Math.max(0, characters.length - 1)
+    return index
   }
 
-  function confirmEditCharacter() {
-    workflowState = {
-      ...workflowState,
-      characters: [{ ...(characters[0] ?? { name: 'Companion' }), details: characterDraft }],
+  function selectCharacter(index) {
+    selectedCharacterIndex = ensureCharacterIndex(index)
+  }
+
+  function startEditCharacter(index) {
+    characterDraft = characters[index]?.details ?? ''
+    editingCharacterIndex = index
+    selectedCharacterIndex = index
+  }
+
+  function confirmEditCharacter(index) {
+    const updated = [...characters]
+    if (!updated[index]) return
+    updated[index] = { ...updated[index], details: characterDraft }
+    updateWorkflow({ ...workflowState, characters: updated })
+    editingCharacterIndex = null
+  }
+
+  function addCharacter() {
+    const next = [
+      ...characters,
+      {
+        name: '',
+        details: '',
+      },
+    ]
+    updateWorkflow({ ...workflowState, characters: next })
+    selectedCharacterIndex = next.length - 1
+  }
+
+  function askDeleteCharacter(index) {
+    confirmDeleteIndex = index
+  }
+
+  function deleteCharacter(index) {
+    const next = characters.filter((_, i) => i !== index)
+    updateWorkflow({ ...workflowState, characters: next })
+    confirmDeleteIndex = null
+    if (next.length === 0) {
+      selectedCharacterIndex = 0
+      return
     }
-    editingCharacter = false
+    selectedCharacterIndex = Math.min(selectedCharacterIndex, next.length - 1)
+  }
+
+  function toggleCollapse(index) {
+    collapsed = { ...collapsed, [index]: !collapsed[index] }
+  }
+
+  function imageSrc(character) {
+    if (character?.image_data) return character.image_data
+    return ''
+  }
+
+  function openImageModal(character, fallbackTitle) {
+    const src = imageSrc(character)
+    if (!src) return
+    imageModalSrc = src
+    imageModalTitle = character?.name || fallbackTitle
+  }
+
+  function closeImageModal() {
+    imageModalSrc = ''
+    imageModalTitle = ''
+  }
+
+  function handleModalBackdropClick(event) {
+    if (event.target === event.currentTarget) {
+      closeImageModal()
+    }
+  }
+
+  function handleModalKeydown(event) {
+    if (event.key === 'Escape') {
+      closeImageModal()
+    }
+  }
+
+  function updateCharacterName(index, nextName) {
+    const updated = [...characters]
+    if (!updated[index]) return
+    updated[index] = { ...updated[index], name: nextName }
+    updateWorkflow({ ...workflowState, characters: updated })
+  }
+
+  async function runModulePrompt(stage) {
+    if (running) return
+
+    let directive = ''
+    let characterIndex = selectedCharacterIndex
+    if (stage === 'loremaster') directive = modulePromptLoremaster
+    if (stage === 'character_designer') directive = modulePromptCharacter
+    if (stage === 'editor') directive = modulePromptEditor
+
+    await onrunmodule({ stage, directive, characterIndex })
+  }
+
+  async function generateCharacterImage(index) {
+    if (running || imageGeneratingIndex !== null) return
+    imageGeneratingIndex = index
+    try {
+      await oncharacterimage({
+        characterIndex: index,
+        promptOverride: imagePromptDrafts[index] ?? '',
+      })
+    } finally {
+      imageGeneratingIndex = null
+    }
   }
 </script>
 
@@ -113,6 +233,12 @@
 
   <div class="panel">
     {#if activeAgent === 'loremaster'}
+      <div class="module-runner">
+        <label for="module-loremaster">Loremaster prompt</label>
+        <textarea id="module-loremaster" bind:value={modulePromptLoremaster} rows="3" placeholder="Refine world setting output..."></textarea>
+        <button class="module-btn" onclick={() => runModulePrompt('loremaster')} disabled={running}>Send To Loremaster</button>
+      </div>
+
       {#if worldSetting}
         <div class="panel-header">
           {#if !editingLoremaster}
@@ -132,28 +258,130 @@
       {/if}
 
     {:else if activeAgent === 'character_designer'}
+      <div class="module-runner">
+        <label for="module-character">Character Designer prompt (selected card)</label>
+        <textarea id="module-character" bind:value={modulePromptCharacter} rows="3" placeholder="Refine selected character..."></textarea>
+        <button class="module-btn" onclick={() => runModulePrompt('character_designer')} disabled={running || characters.length === 0}>
+          Send To Character Designer
+        </button>
+      </div>
+
+      <div class="character-toolbar">
+        <button class="add-char-btn" onclick={addCharacter} disabled={running}>+ Add Blank Character</button>
+      </div>
+
       {#if characters.length > 0}
-        {#each characters as char}
-          <div class="panel-header">
-            <h3 class="char-name">{char.name}</h3>
-            {#if !editingCharacter}
-              <button class="edit-btn" onclick={startEditCharacter} disabled={running}>✎ Edit</button>
-            {:else}
-              <button class="confirm-btn" onclick={confirmEditCharacter}>✔ Done</button>
-              <button class="cancel-btn" onclick={() => (editingCharacter = false)}>✕</button>
+        {#each characters as character, index}
+          {@const isCollapsed = Boolean(collapsed[index])}
+          {@const isSelected = selectedCharacterIndex === index}
+          {@const headerImg = imageSrc(character)}
+          <article class="character-card" class:selected={isSelected}>
+            <header class="character-header">
+              <button class="collapse-btn" onclick={() => toggleCollapse(index)} title={isCollapsed ? 'Expand' : 'Collapse'}>
+                {isCollapsed ? '▸' : '▾'}
+              </button>
+
+              <div class="character-summary">
+                {#if headerImg}
+                  <button
+                    class="image-btn"
+                    onclick={() => openImageModal(character, `Character ${index + 1}`)}
+                    aria-label={`Open ${character.name} image`}
+                  >
+                    <img
+                      class="thumb"
+                      class:thumb-collapsed={isCollapsed}
+                      src={headerImg}
+                      alt={`${character.name} avatar`}
+                    />
+                  </button>
+                {:else}
+                  <div class="thumb placeholder" class:thumb-collapsed={isCollapsed}>IMG</div>
+                {/if}
+
+                <input
+                  class="char-name-input"
+                  value={character.name}
+                  placeholder={`Character ${index + 1}`}
+                  oninput={(event) => updateCharacterName(index, event.currentTarget.value)}
+                  onfocus={() => selectCharacter(index)}
+                />
+              </div>
+
+              <div class="character-actions">
+                <button class="select-btn" onclick={() => selectCharacter(index)}>
+                  {isSelected ? 'Selected' : 'Select'}
+                </button>
+                <button class="edit-btn" onclick={() => startEditCharacter(index)} disabled={running}>✎ Edit</button>
+                <button class="delete-btn" onclick={() => askDeleteCharacter(index)} disabled={running || characters.length === 1}>🗑 Delete</button>
+              </div>
+            </header>
+
+            {#if !isCollapsed}
+              <div class="character-body">
+                <div class="portrait-panel">
+                  {#if headerImg}
+                    <button class="image-btn" onclick={() => openImageModal(character, character.name)} aria-label={`Open ${character.name} portrait`}>
+                      <img class="portrait" src={headerImg} alt={`${character.name} portrait`} />
+                    </button>
+                  {:else}
+                    <div class="portrait portrait-placeholder">No image yet</div>
+                  {/if}
+
+                  <label for={`image-prompt-${index}`}>Image prompt</label>
+                  <textarea
+                    id={`image-prompt-${index}`}
+                    rows="3"
+                    placeholder="Leave empty to auto-generate prompt from character details"
+                    value={imagePromptDrafts[index] ?? character.image_prompt ?? ''}
+                    oninput={(event) => {
+                      imagePromptDrafts = { ...imagePromptDrafts, [index]: event.currentTarget.value }
+                    }}
+                  ></textarea>
+
+                  <button class="module-btn" onclick={() => generateCharacterImage(index)} disabled={running || imageGeneratingIndex !== null}>
+                    {imageGeneratingIndex === index ? 'Generating image…' : 'Generate Character Image'}
+                  </button>
+                </div>
+
+                <div class="details-panel">
+                  {#if editingCharacterIndex === index}
+                    <textarea class="edit-area" bind:value={characterDraft}></textarea>
+                    <div class="inline-actions">
+                      <button class="confirm-btn" onclick={() => confirmEditCharacter(index)}>✔ Done</button>
+                      <button class="cancel-btn" onclick={() => (editingCharacterIndex = null)}>✕</button>
+                    </div>
+                  {:else}
+                    <MarkdownBlock source={character.details} />
+                  {/if}
+                </div>
+              </div>
             {/if}
-          </div>
-          {#if editingCharacter}
-            <textarea class="edit-area" bind:value={characterDraft}></textarea>
-          {:else}
-            <MarkdownBlock source={char.details} />
-          {/if}
+          </article>
         {/each}
       {:else}
-        <p class="empty">{running && lastNode === 'character_designer' ? 'Generating…' : 'No output yet.'}</p>
+        <p class="empty">No characters yet. Add one to begin.</p>
+      {/if}
+
+      {#if confirmDeleteIndex !== null}
+        <div class="confirm-strip">
+          <p>Delete {characters[confirmDeleteIndex]?.name || `Character ${confirmDeleteIndex + 1}`}?</p>
+          <div class="inline-actions">
+            <button class="delete-btn" onclick={() => deleteCharacter(confirmDeleteIndex)}>Yes, delete</button>
+            <button class="cancel-btn" onclick={() => (confirmDeleteIndex = null)}>Cancel</button>
+          </div>
+        </div>
       {/if}
 
     {:else if activeAgent === 'editor'}
+      <div class="module-runner">
+        <label for="module-editor">Editor prompt</label>
+        <textarea id="module-editor" bind:value={modulePromptEditor} rows="3" placeholder="Ask editor for specific critique focus..."></textarea>
+        <button class="module-btn" onclick={() => runModulePrompt('editor')} disabled={running || characters.length === 0}>
+          Send To Editor
+        </button>
+      </div>
+
       {#if passedInspection === true}
         <p class="passed">✓ PASSED</p>
         {#if critiqueNotes}
@@ -206,6 +434,23 @@
   </div>
 </div>
 
+{#if imageModalSrc}
+  <div
+    class="image-modal"
+    role="dialog"
+    aria-modal="true"
+    tabindex="0"
+    onkeydown={handleModalKeydown}
+    onclick={handleModalBackdropClick}
+  >
+    <div class="image-modal-content">
+      <button class="modal-close" onclick={closeImageModal}>✕</button>
+      <h3>{imageModalTitle}</h3>
+      <img src={imageModalSrc} alt={imageModalTitle} />
+    </div>
+  </div>
+{/if}
+
 <style>
   .workflow-header {
     display: flex;
@@ -224,8 +469,16 @@
     flex: 1;
   }
 
-  .next-btn {
+  .header-actions {
+    display: flex;
+    gap: 0.45rem;
     flex: 0 0 auto;
+  }
+
+  .next-btn,
+  .continue-btn,
+  .module-btn,
+  .add-char-btn {
     border: 1px solid #2563eb;
     background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
     color: #fff;
@@ -233,25 +486,20 @@
     padding: 0.45rem 1rem;
     font-size: 0.82rem;
     font-weight: 700;
-    letter-spacing: 0.02em;
     cursor: pointer;
-    transition: transform 120ms ease, filter 120ms ease;
   }
 
-  .next-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    filter: brightness(1.05);
+  .continue-btn {
+    border-color: #6366f1;
+    background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%);
   }
 
-  .next-btn:disabled {
+  .next-btn:disabled,
+  .continue-btn:disabled,
+  .module-btn:disabled,
+  .add-char-btn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 0.45rem;
-    flex: 0 0 auto;
   }
 
   .stop-btn {
@@ -259,9 +507,6 @@
     background: transparent;
     padding: 0;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
   }
 
   .stop-sign {
@@ -273,39 +518,9 @@
     color: #fff;
     font-size: 0.52rem;
     font-weight: 800;
-    letter-spacing: 0.04em;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 16px -10px rgba(127, 29, 29, 0.95);
-  }
-
-  .stop-btn:hover .stop-sign {
-    filter: brightness(1.06);
-    transform: translateY(-1px);
-  }
-
-  .continue-btn {
-    border: 1px solid #6366f1;
-    background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%);
-    color: #fff;
-    border-radius: 999px;
-    padding: 0.45rem 0.95rem;
-    font-size: 0.82rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    cursor: pointer;
-    transition: transform 120ms ease, filter 120ms ease;
-  }
-
-  .continue-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    filter: brightness(1.05);
-  }
-
-  .continue-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
   }
 
   .agent-step {
@@ -321,13 +536,6 @@
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-  }
-
-  .agent-step:hover {
-    transform: translateY(-1px);
-    border-color: #94a3b8;
-    box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.75);
   }
 
   .agent-step::after {
@@ -338,7 +546,6 @@
     transform: translateY(-50%);
     color: #94a3b8;
     font-size: 0.9rem;
-    pointer-events: none;
   }
 
   .agent-step:last-child::after {
@@ -356,26 +563,12 @@
     color: #1e3a8a;
     font-size: 0.72rem;
     font-weight: 700;
-    border: 1px solid #bfdbfe;
-  }
-
-  .step-label {
-    white-space: nowrap;
-    font-weight: 600;
-    letter-spacing: 0.01em;
   }
 
   .agent-step.active {
     background: #1e40af;
     color: #fff;
     border-color: #1e40af;
-    box-shadow: 0 8px 20px -14px rgba(30, 64, 175, 1);
-  }
-
-  .agent-step.active .step-index {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.35);
-    color: #fff;
   }
 
   .agent-step.current {
@@ -394,8 +587,6 @@
   .ready-dot {
     color: #f59e0b;
     font-size: 0.8rem;
-    line-height: 1;
-    text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
   }
 
   @keyframes blink {
@@ -407,211 +598,318 @@
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     padding: 1rem;
-    min-height: 200px;
+    min-height: 220px;
   }
 
-  .empty { color: #94a3b8; font-style: italic; }
-  .passed { color: #16a34a; font-weight: 600; }
-  .failed { color: #dc2626; font-weight: 600; }
+  .module-runner {
+    display: grid;
+    gap: 0.45rem;
+    margin-bottom: 0.85rem;
+    padding: 0.75rem;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    background: #ffffff;
+  }
+
+  .module-runner label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #334155;
+  }
+
+  .module-runner textarea,
+  .edit-area,
+  .portrait-panel textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.55rem;
+    resize: vertical;
+    font-size: 0.9rem;
+    min-height: 78px;
+  }
 
   .panel-header {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0.6rem;
+    justify-content: flex-end;
+    margin-bottom: 0.4rem;
   }
 
-  .char-name {
-    margin: 0;
+  .character-toolbar {
+    margin: 0 0 0.75rem;
+  }
+
+  .character-card {
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: #fff;
+    margin-bottom: 0.85rem;
+    overflow: hidden;
+  }
+
+  .character-card.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+  }
+
+  .character-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.65rem 0.75rem;
+    background: #f8fafc;
+    cursor: pointer;
+  }
+
+  .collapse-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .character-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
     flex: 1;
   }
 
-  .edit-btn {
-    margin-left: auto;
-    padding: 0.2rem 0.65rem;
-    background: transparent;
+  .thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    object-fit: cover;
     border: 1px solid #cbd5e1;
-    border-radius: 5px;
-    color: #64748b;
-    font-size: 0.8rem;
     cursor: pointer;
+    flex: 0 0 auto;
   }
 
-  .edit-btn:hover:not(:disabled) { border-color: #94a3b8; color: #1e293b; }
-  .edit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .confirm-btn {
-    padding: 0.2rem 0.65rem;
-    background: #16a34a;
+  .image-btn {
     border: none;
-    border-radius: 5px;
-    color: #fff;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-
-  .confirm-btn:hover { background: #15803d; }
-
-  .cancel-btn {
-    padding: 0.2rem 0.55rem;
     background: transparent;
+    padding: 0;
+    margin: 0;
+    line-height: 0;
+    cursor: pointer;
+    border-radius: 10px;
+  }
+
+  .image-btn:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+
+  .thumb-collapsed {
+    width: 64px;
+    height: 64px;
+  }
+
+  .placeholder {
+    display: grid;
+    place-items: center;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .char-name-input {
     border: 1px solid #cbd5e1;
-    border-radius: 5px;
-    color: #64748b;
-    font-size: 0.8rem;
+    border-radius: 8px;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.95rem;
+    width: min(320px, 100%);
+  }
+
+  .character-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .select-btn,
+  .edit-btn,
+  .confirm-btn,
+  .cancel-btn,
+  .delete-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 8px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
     cursor: pointer;
   }
 
-  .cancel-btn:hover { border-color: #94a3b8; color: #dc2626; }
+  .select-btn {
+    border-color: #2563eb;
+    color: #1d4ed8;
+  }
 
-  .edit-area {
-    width: 100%;
-    min-height: 300px;
-    padding: 0.65rem;
+  .delete-btn {
+    border-color: #fecaca;
+    color: #b91c1c;
+  }
+
+  .character-body {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 0.85rem;
+    padding: 0.8rem;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .portrait-panel {
+    display: grid;
+    gap: 0.45rem;
+    align-content: start;
+  }
+
+  .portrait {
+    width: 256px;
+    height: 256px;
+    border-radius: 12px;
+    object-fit: cover;
     border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    font-family: ui-monospace, Menlo, Consolas, monospace;
-    font-size: 0.875rem;
-    line-height: 1.6;
-    resize: vertical;
-    box-sizing: border-box;
+    cursor: pointer;
+  }
+
+  .portrait-placeholder {
+    display: grid;
+    place-items: center;
+    background: #e2e8f0;
+    color: #475569;
+    font-weight: 600;
+  }
+
+  .confirm-strip {
+    margin-top: 0.4rem;
+    border: 1px solid #fecaca;
+    background: #fff1f2;
+    color: #881337;
+    border-radius: 10px;
+    padding: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+
+  .inline-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .passed { color: #16a34a; font-weight: 700; }
+  .failed { color: #dc2626; font-weight: 700; }
+  .empty { color: #94a3b8; font-style: italic; }
+
+  .save-card {
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 0.9rem;
     background: #fff;
   }
 
-  .save-card {
-    border: 1px solid #dbeafe;
-    border-radius: 12px;
-    background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 55%, #ffffff 100%);
-    padding: 1rem;
-    box-shadow: 0 14px 30px -28px rgba(30, 64, 175, 0.95);
-  }
-
   .save-card.success {
-    border-color: #86efac;
-    background: linear-gradient(160deg, #ecfdf3 0%, #f8fafc 60%, #ffffff 100%);
-  }
-
-  .save-title {
-    margin: 0;
-    font-size: 1rem;
-    color: #1e3a8a;
-  }
-
-  .save-subtitle {
-    margin: 0.35rem 0 0.85rem;
-    color: #475569;
-    font-size: 0.9rem;
+    border-color: #16a34a;
+    background: #f0fdf4;
   }
 
   .save-form {
     display: grid;
-    gap: 0.75rem;
-  }
-
-  .field-label {
-    font-size: 0.82rem;
-    color: #334155;
-    font-weight: 600;
-  }
-
-  .filename-row {
-    margin-top: 0.3rem;
+    gap: 0.55rem;
   }
 
   .filename-input {
     width: 100%;
     border: 1px solid #cbd5e1;
-    border-radius: 9px;
-    padding: 0.6rem 0.7rem;
-    font-size: 0.9rem;
-    background: #fff;
+    border-radius: 8px;
+    padding: 0.55rem;
     box-sizing: border-box;
-  }
-
-  .filename-input:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
 
   .name-actions {
     display: flex;
     gap: 0.5rem;
-    flex-wrap: wrap;
   }
 
   .suggest-btn,
-  .random-btn {
-    border-radius: 999px;
-    border: 1px solid #bfdbfe;
-    background: #eff6ff;
-    color: #1d4ed8;
-    padding: 0.38rem 0.75rem;
-    font-size: 0.8rem;
-    font-weight: 600;
+  .random-btn,
+  .save-btn {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    background: #fff;
     cursor: pointer;
-  }
-
-  .suggest-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .save-btn {
-    justify-self: start;
-    border-radius: 10px;
-    border: 1px solid #16a34a;
-    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    background: #1e40af;
     color: #fff;
-    font-size: 0.88rem;
-    font-weight: 700;
-    padding: 0.5rem 0.95rem;
+    border-color: #1e40af;
+  }
+
+  .image-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.6);
+    display: grid;
+    place-items: center;
+    z-index: 60;
+    padding: 1rem;
+  }
+
+  .image-modal-content {
+    position: relative;
+    width: min(94vw, 860px);
+    max-height: 92vh;
+    background: #fff;
+    border-radius: 12px;
+    padding: 1rem;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .image-modal-content img {
+    width: 100%;
+    max-height: calc(92vh - 140px);
+    object-fit: contain;
+    border-radius: 8px;
+    background: #0f172a;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    width: 2rem;
+    height: 2rem;
     cursor: pointer;
   }
 
-  .saved-name {
-    margin: 0 0 0.4rem;
-    color: #166534;
-  }
-
-  .run-path {
-    margin: 0;
-    color: #475569;
-    font-size: 0.86rem;
-    word-break: break-all;
-  }
-
-  @media (max-width: 720px) {
-    .workflow-header {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .agent-tabs {
-      gap: 1rem;
-    }
-
-    .next-btn {
-      width: 100%;
-    }
-
-    .header-actions {
-      width: 100%;
-      display: grid;
+  @media (max-width: 900px) {
+    .character-body {
       grid-template-columns: 1fr;
     }
 
-    .continue-btn {
+    .portrait {
       width: 100%;
+      max-width: 256px;
     }
 
-    .agent-step {
-      padding: 0.4rem 0.8rem;
+    .character-header {
+      flex-wrap: wrap;
     }
 
-    .agent-step::after {
-      right: -0.86rem;
-      font-size: 0.8rem;
+    .character-actions {
+      width: 100%;
+      justify-content: flex-end;
     }
   }
 </style>

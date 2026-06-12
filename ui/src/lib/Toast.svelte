@@ -1,16 +1,56 @@
 <script>
   let { message = '', visible = $bindable(false), duration = 3000 } = $props()
 
-  $effect(() => {
-    if (visible) {
-      const timer = setTimeout(() => { visible = false }, duration)
-      return () => clearTimeout(timer)
+  let timer = null
+  let startedAt = 0
+  let remainingMs = 3000
+
+  function clearTimer() {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
     }
+  }
+
+  function startTimer(ms) {
+    clearTimer()
+    startedAt = Date.now()
+    timer = setTimeout(() => {
+      visible = false
+      timer = null
+    }, ms)
+  }
+
+  function pauseTimer() {
+    if (!timer) return
+    const elapsed = Date.now() - startedAt
+    remainingMs = Math.max(0, remainingMs - elapsed)
+    clearTimer()
+  }
+
+  function resumeTimer() {
+    if (!visible) return
+    if (remainingMs <= 0) {
+      visible = false
+      return
+    }
+    startTimer(remainingMs)
+  }
+
+  $effect(() => {
+    const _message = message
+    const _duration = duration
+    if (visible) {
+      remainingMs = duration
+      startTimer(duration)
+      return () => clearTimer()
+    }
+    clearTimer()
   })
 </script>
 
 {#if visible}
-  <div class="toast">{message}</div>
+  <div class="toast" role="status" aria-live="polite" onmouseenter={pauseTimer} onmouseleave={resumeTimer}>{message}</div>
 {/if}
 
 <style>
