@@ -60,6 +60,43 @@
     workflowState = nextState
   }
 
+  function extractCharacterName(details) {
+    if (!details || typeof details !== 'string') return ''
+    const firstLine = details.split('\n')[0].trim()
+    if (!firstLine) return ''
+    
+    // Remove common prefixes like "Companion Character:", "Character:", "## ", etc.
+    let name = firstLine
+      .replace(/^(Companion\s+)?Character:\s*/i, '')
+      .replace(/^#+\s*/, '')
+      .replace(/^\*\*/, '')
+      .replace(/\*\*$/, '')
+      .trim()
+    
+    return name.length > 0 && name.length < 100 ? name : ''
+  }
+
+  // Auto-extract and set character names when they're generated
+  $effect(() => {
+    if (!characters || characters.length === 0) return
+    
+    const updated = characters.map((char, idx) => {
+      // Only update name if it's empty and we have details
+      if ((!char.name || char.name.startsWith('Companion')) && char.details) {
+        const extracted = extractCharacterName(char.details)
+        if (extracted && extracted !== char.name) {
+          return { ...char, name: extracted }
+        }
+      }
+      return char
+    })
+
+    // Only update if something actually changed
+    if (JSON.stringify(updated) !== JSON.stringify(characters)) {
+      updateWorkflow({ ...workflowState, characters: updated })
+    }
+  })
+
   function startEditLoremaster() {
     loremasterDraft = worldSetting
     editingLoremaster = true
@@ -196,6 +233,35 @@
       await oncharacterimage({
         characterIndex: index,
         promptOverride: imagePromptDrafts[index] ?? '',
+        mode: 'full', // generate both prompt and image
+      })
+    } finally {
+      imageGeneratingIndex = null
+    }
+  }
+
+  async function regenerateImagePrompt(index) {
+    if (running || imageGeneratingIndex !== null || !llmConnected) return
+    imageGeneratingIndex = index
+    try {
+      await oncharacterimage({
+        characterIndex: index,
+        promptOverride: imagePromptDrafts[index] ?? '',
+        mode: 'prompt', // generate prompt only
+      })
+    } finally {
+      imageGeneratingIndex = null
+    }
+  }
+
+  async function generateImageFromPrompt(index) {
+    if (running || imageGeneratingIndex !== null || !llmConnected) return
+    imageGeneratingIndex = index
+    try {
+      await oncharacterimage({
+        characterIndex: index,
+        promptOverride: imagePromptDrafts[index] ?? '',
+        mode: 'image', // use existing prompt, generate image only
       })
     } finally {
       imageGeneratingIndex = null
@@ -368,9 +434,17 @@
                     }}
                   ></textarea>
 
-                  <button class="module-btn" onclick={() => generateCharacterImage(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected}>
-                    {imageGeneratingIndex === index ? 'Generating image…' : 'Generate Character Image'}
-                  </button>
+                  <div class="image-button-group">
+                    <button class="module-btn" onclick={() => generateCharacterImage(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected}>
+                      {imageGeneratingIndex === index ? 'Generating…' : '🎨 Generate Image'}
+                    </button>
+                    <button class="icon-btn" onclick={() => regenerateImagePrompt(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected} title="Regenerate prompt">
+                      ♻️
+                    </button>
+                    <button class="icon-btn" onclick={() => generateImageFromPrompt(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected} title="Generate image from current prompt">
+                      🖼️
+                    </button>
+                  </div>
                 </div>
 
                 <div class="details-panel">
@@ -555,12 +629,43 @@
     clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
     background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
     border: 2px solid #7f1d1d;
-    color: #fff;
-    font-size: 0.52rem;
-    font-weight: 800;
-    display: inline-flex;
+  }
+
+  .image-button-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .image-button-group .module-btn {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .icon-btn {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    border-radius: 8px;
+    padding: 0.45rem 0.6rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1e40af;
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .agent-step {

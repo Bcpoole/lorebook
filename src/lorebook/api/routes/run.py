@@ -171,6 +171,46 @@ def _is_meta_response(text: str) -> bool:
     return any(lower.startswith(marker) for marker in meta_markers)
 
 
+def _clean_continued_output(text: str) -> str:
+    """Clean up output from continuations: remove (Continued) markers and duplicate headers."""
+    if not text:
+        return ""
+    
+    import re
+    
+    # Remove "(Continued)" markers (with variations)
+    text = re.sub(r'\s*\(Continued\)\s*', '', text, flags=re.IGNORECASE)
+    
+    # Fix headers that got mashed together (e.g., "bond## World Rules" -> "bond\n\n## World Rules")
+    # Match: word/punctuation followed directly by # (markdown header)
+    text = re.sub(r'([a-zA-Z0-9.,;:\'\"])\s*(#{1,6}\s+)', r'\1\n\n\2', text)
+    
+    # Remove duplicate headers within the same text
+    # Split into lines and track headers we've seen
+    lines = text.split('\n')
+    seen_headers = set()
+    cleaned_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        # Check if this is a header line
+        if stripped.startswith('#'):
+            # Extract header content (ignore leading #'s and trailing spaces)
+            header_content = stripped.lstrip('#').strip()
+            # Only keep if we haven't seen this exact header before
+            if header_content not in seen_headers:
+                seen_headers.add(header_content)
+                cleaned_lines.append(line)
+        else:
+            cleaned_lines.append(line)
+    
+    # Rejoin and clean up excessive blank lines
+    text = '\n'.join(cleaned_lines)
+    text = re.sub(r'\n{4,}', '\n\n\n', text)  # Max 3 newlines
+    
+    return text.strip()
+
+
 def _continuation_addition(prior: str, generated: str) -> str:
     """Strip duplicated leading text when a continuation restarts from the top."""
     if not prior or not generated:
@@ -237,7 +277,8 @@ def _run_stage_sync(
             max_length=max_length,
         )
         addition = _continuation_addition(prior_text, generated) if continue_output else generated
-        state["world_setting"] = f"{prior_text}{addition}" if continue_output else addition
+        output = f"{prior_text}{addition}" if continue_output else addition
+        state["world_setting"] = _clean_continued_output(output)
         return "character_designer"
 
     if stage == "character_designer":
@@ -277,6 +318,7 @@ def _run_stage_sync(
         
         addition = _continuation_addition(current_details, generated) if continue_output else generated
         details = f"{current_details}{addition}" if continue_output else addition
+        details = _clean_continued_output(details)
         state["characters"] = _upsert_character(state, character_index, details)
         return "editor"
 
@@ -303,6 +345,7 @@ def _run_stage_sync(
         prior_critique = state.get("critique_notes", "")
         addition = _continuation_addition(prior_critique, generated) if continue_output else generated
         critique = f"{state.get('critique_notes', '')}{addition}" if continue_output else addition
+        critique = _clean_continued_output(critique)
         passed = "PASSED" in critique
         state["passed_inspection"] = passed
         state["critique_notes"] = critique
@@ -349,9 +392,9 @@ async def _run_stage_stream(
             yield {"event": "node-token", "data": json.dumps({"node": stage, "chunk": chunk})}
         addition = _continuation_addition(prior_text, generated) if continue_output else generated
         text = f"{prior_text}{addition}" if continue_output else addition
-        state["world_setting"] = text
+        state["world_setting"] = _clean_continued_output(text)
         next_stage = "character_designer"
-        output = {"world_setting": text}
+        output = {"world_setting": state["world_setting"]}
 
     elif stage == "character_designer":
         if not state.get("world_setting"):
@@ -398,6 +441,7 @@ async def _run_stage_stream(
         
         addition = _continuation_addition(prior_details, generated) if continue_output else generated
         details = f"{prior_details}{addition}" if continue_output else addition
+        details = _clean_continued_output(details)
         state["characters"] = _upsert_character(state, character_index, details)
         next_stage = "editor"
         output = {"characters": state["characters"]}
@@ -450,6 +494,7 @@ async def _run_stage_stream(
             yield {"event": "node-token", "data": json.dumps({"node": stage, "chunk": chunk})}
         addition = _continuation_addition(prior_critique, generated) if continue_output else generated
         critique = f"{prior_critique}{addition}" if continue_output else addition
+        critique = _clean_continued_output(critique)
         passed = "PASSED" in critique
         state["passed_inspection"] = passed
         state["critique_notes"] = critique
