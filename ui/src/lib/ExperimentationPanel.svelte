@@ -7,11 +7,13 @@
     auto = $bindable(false),
     streaming = $bindable(true),
     showStats = $bindable(false),
+    collapsed = false,
     onSave = () => {},
     onCancel = () => {},
     onSaveSd = () => {},
     onCancelSd = () => {},
     onOpenGraph = () => {},
+    onToggleCollapse = () => {},
   } = $props()
 
   let activeTab = $state('experiment')
@@ -156,55 +158,61 @@
   })
 </script>
 
-<div class="experimentation-panel">
-  <div class="panel-header">
-    <div class="tab-strip" role="tablist" aria-label="Settings tabs">
-      <button
-        class="tab-btn"
-        class:active={activeTab === 'general'}
-        role="tab"
-        aria-selected={activeTab === 'general'}
-        title="General settings"
-        aria-label="General settings"
-        onclick={() => (activeTab = 'general')}
-      >
-        ⚙️
-      </button>
-      <button
-        class="tab-btn"
-        class:active={activeTab === 'experiment'}
-        role="tab"
-        aria-selected={activeTab === 'experiment'}
-        title="Experimentation settings"
-        aria-label="Experimentation settings"
-        onclick={() => (activeTab = 'experiment')}
-      >
-        🔬
-      </button>
-      <button
-        class="tab-btn"
-        class:active={activeTab === 'sd'}
-        role="tab"
-        aria-selected={activeTab === 'sd'}
-        title="Stable Diffusion settings"
-        aria-label="Stable Diffusion settings"
-        onclick={() => (activeTab = 'sd')}
-      >
-        🖌️
+<div class="experimentation-panel" class:collapsed>
+  {#if !collapsed}
+    <div class="panel-header">
+      <div class="header-main">
+        <div class="tab-strip" role="tablist" aria-label="Settings tabs">
+          <button
+            class="tab-btn"
+            class:active={activeTab === 'general'}
+            role="tab"
+            aria-selected={activeTab === 'general'}
+            title="General settings"
+            aria-label="General settings"
+            onclick={() => (activeTab = 'general')}
+          >
+            ⚙️
+          </button>
+          <button
+            class="tab-btn"
+            class:active={activeTab === 'experiment'}
+            role="tab"
+            aria-selected={activeTab === 'experiment'}
+            title="Experimentation settings"
+            aria-label="Experimentation settings"
+            onclick={() => (activeTab = 'experiment')}
+          >
+            🔬
+          </button>
+          <button
+            class="tab-btn"
+            class:active={activeTab === 'sd'}
+            role="tab"
+            aria-selected={activeTab === 'sd'}
+            title="Stable Diffusion settings"
+            aria-label="Stable Diffusion settings"
+            onclick={() => (activeTab = 'sd')}
+          >
+            🖌️
+          </button>
+        </div>
+
+        {#if isDirty}
+          <span class="dirty-indicator" title="Unsaved changes">●</span>
+        {/if}
+      </div>
+      <button class="collapse-toggle-btn" type="button" title="Collapse settings panel" aria-label="Collapse settings panel" onclick={onToggleCollapse}>
+        ⟨
       </button>
     </div>
 
-    {#if isDirty}
-      <span class="dirty-indicator" title="Unsaved changes">●</span>
-    {/if}
-  </div>
+    <div class="panel-actions">
+      <button class="btn btn-save" onclick={handleSave} disabled={!isDirty}>💾 Save</button>
+      <button class="btn btn-cancel" onclick={handleCancel} disabled={!isDirty}>✕ Cancel</button>
+    </div>
 
-  <div class="panel-actions">
-    <button class="btn btn-save" onclick={handleSave} disabled={!isDirty}>💾 Save</button>
-    <button class="btn btn-cancel" onclick={handleCancel} disabled={!isDirty}>✕ Cancel</button>
-  </div>
-
-  <div class="panel-content">
+    <div class="panel-content">
     {#if activeTab === 'general'}
       <section class="section-body">
         <div class="control-group">
@@ -415,8 +423,8 @@
         </div>
       </section>
     {/if}
-  </div>
-
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -429,21 +437,37 @@
     font-size: 12px;
     font-family: system-ui, -apple-system, sans-serif;
     height: 100vh;
-    width: 300px;
+    width: 100%;
     overflow: hidden;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
+    transition: width 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    min-width: 0;
+  }
+
+  .experimentation-panel.collapsed {
+    width: 0;
+    border-right-color: transparent;
+    box-shadow: none;
   }
 
   .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
     padding: 10px 12px;
     border-bottom: 1px solid #1f2937;
     background: #0b1220;
     position: sticky;
     top: 0;
     z-index: 10;
+  }
+
+  .header-main {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
   }
 
   .tab-strip {
@@ -470,6 +494,24 @@
   .dirty-indicator {
     color: #ef4444;
     font-size: 16px;
+  }
+
+  .collapse-toggle-btn {
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e5e7eb;
+    width: 1.95rem;
+    height: 1.95rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    flex: 0 0 auto;
+  }
+
+  .collapse-toggle-btn:hover {
+    border-color: #60a5fa;
+    color: #93c5fd;
   }
 
   .panel-content {
@@ -632,7 +674,7 @@
 
   @media (max-width: 980px) {
     .experimentation-panel {
-      width: 260px;
+      width: 100%;
     }
   }
 </style>

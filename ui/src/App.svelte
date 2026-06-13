@@ -49,6 +49,7 @@
   let showRestoreBanner = $state(true)
   let restoreBannerHovered = $state(false)
   let restoreBannerAutoDismissTimer = null
+  let leftPanelCollapsed = $state(false)
   let storyPageState = $state({
     rawIdea: '',
     loading: false,
@@ -1629,20 +1630,35 @@
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <div class="app-container">
-  <ExperimentationPanel
-    bind:live={experimentationLive}
-    bind:saved={experimentationSaved}
-    bind:isDirty={experimentationDirty}
-    bind:auto
-    bind:streaming
-    bind:showStats
-    sdStyleOptions={sdStyleOptions}
-    onSave={saveExperimentation}
-    onCancel={cancelExperimentation}
-    onSaveSd={saveExperimentation}
-    onCancelSd={cancelExperimentation}
-    onOpenGraph={openGraphModal}
-  />
+  <div class="left-panel-shell" class:collapsed={leftPanelCollapsed}>
+    <ExperimentationPanel
+      bind:live={experimentationLive}
+      bind:saved={experimentationSaved}
+      bind:isDirty={experimentationDirty}
+      bind:auto
+      bind:streaming
+      bind:showStats
+      collapsed={leftPanelCollapsed}
+      sdStyleOptions={sdStyleOptions}
+      onSave={saveExperimentation}
+      onCancel={cancelExperimentation}
+      onSaveSd={saveExperimentation}
+      onCancelSd={cancelExperimentation}
+      onOpenGraph={openGraphModal}
+      onToggleCollapse={() => (leftPanelCollapsed = true)}
+    />
+  </div>
+  {#if leftPanelCollapsed}
+    <button
+      class="left-panel-edge-toggle"
+      type="button"
+      title="Expand settings panel"
+      aria-label="Expand settings panel"
+      onclick={() => (leftPanelCollapsed = false)}
+    >
+      ⟩
+    </button>
+  {/if}
 
   <div class="workspace-area">
     {#if !appServerConnected}
@@ -1757,6 +1773,39 @@
   .app-container {
     display: flex;
     height: 100vh;
+    position: relative;
+  }
+
+  .left-panel-shell {
+    width: 300px;
+    flex: 0 0 auto;
+    transition: width 0.2s ease;
+    overflow: hidden;
+  }
+
+  .left-panel-shell.collapsed {
+    width: 0;
+  }
+
+  .left-panel-edge-toggle {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translate(-35%, -50%);
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e5e7eb;
+    width: 1.95rem;
+    height: 3rem;
+    border-radius: 999px;
+    cursor: pointer;
+    z-index: 35;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+  }
+
+  .left-panel-edge-toggle:hover {
+    border-color: #60a5fa;
+    color: #93c5fd;
   }
 
   .workspace-area {
@@ -1764,6 +1813,12 @@
     min-width: 0;
     display: flex;
     position: relative;
+  }
+
+  @media (max-width: 980px) {
+    .left-panel-shell {
+      width: 260px;
+    }
   }
 
   .llm-alert {
