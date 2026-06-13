@@ -11,6 +11,7 @@
     onCancel = () => {},
     onSaveSd = () => {},
     onCancelSd = () => {},
+    onOpenGraph = () => {},
   } = $props()
 
   let activeTab = $state('experiment')
@@ -247,6 +248,10 @@
           <label for="sd-endpoint">SD Endpoint</label>
           <input id="sd-endpoint" type="text" bind:value={live.general.sdEndpoint} class="wide" />
         </div>
+
+        <hr class="divider" />
+
+        <button class="graph-btn" onclick={onOpenGraph}>Graph</button>
       </section>
     {/if}
 
@@ -605,6 +610,24 @@
     border-color: #60a5fa;
     background: #0f172a;
     color: #93c5fd;
+  }
+
+  .graph-btn {
+    width: 100%;
+    border: 1px solid #475569;
+    background: #1e293b;
+    color: #cbd5e1;
+    border-radius: 6px;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .graph-btn:hover {
+    border-color: #94a3b8;
+    color: #f1f5f9;
   }
 
   @media (max-width: 980px) {

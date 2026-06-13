@@ -1468,7 +1468,7 @@
   })
 </script>
 
-<TopBar bind:showStats bind:streaming bind:auto {meta} ongraph={openGraphTab} />
+<TopBar bind:showStats bind:streaming bind:auto {meta} />
 
 {#if !appServerConnected}
   <div class="llm-alert" role="alert" aria-live="assertive">
@@ -1567,6 +1567,7 @@
     onCancel={cancelExperimentation}
     onSaveSd={saveExperimentation}
     onCancelSd={cancelExperimentation}
+    onOpenGraph={openGraphTab}
   />
 
   <div class="workspace-area">
