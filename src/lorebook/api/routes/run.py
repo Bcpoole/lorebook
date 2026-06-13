@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Dict
 from uuid import uuid4
 
 import requests
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 from lorebook.characters import infer_character_name, should_replace_character_name
@@ -17,13 +17,15 @@ from lorebook.config.prompts import get_persona_prompts
 from lorebook.config.sd_styles import DEFAULT_SD_STYLE, SD_STYLES
 from lorebook.api.storage import (
     delete_draft_state,
+    list_run_previews,
     load_draft_state,
     load_run,
     save_draft_state,
     save_run_result,
+    update_character_role,
 )
 from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_llm
-from lorebook.state import CharacterState, WizardState
+from lorebook.state import CharacterState, StoryArtifact, WizardState
 
 router = APIRouter()
 
@@ -52,6 +54,16 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
             "name": str(entry.get("name") or f"Companion {index}"),
             "details": str(entry.get("details") or ""),
         }
+        role_value = str(entry.get("role") or "").strip().lower()
+        if role_value in {"character", "persona"}:
+            normalized_entry["role"] = role_value
+
+        tags_value = entry.get("tags")
+        if isinstance(tags_value, list):
+            cleaned_tags = [str(tag).strip().lower() for tag in tags_value if str(tag).strip()]
+            if cleaned_tags:
+                normalized_entry["tags"] = cleaned_tags
+
         for optional_key in ("image_path", "image_prompt", "image_data"):
             optional_value = entry.get(optional_key)
             if isinstance(optional_value, str) and optional_value:
@@ -60,15 +72,87 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
     return normalized
 
 
+def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
+    if not isinstance(value, dict):
+        return None
+
+    def _as_string_list(raw: Any) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        output: list[str] = []
+        for entry in raw:
+            text = str(entry).strip()
+            if text:
+                output.append(text)
+        return output
+
+    def _as_entity_list(raw: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw, list):
+            return []
+        output: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            description = str(entry.get("description") or "").strip()
+            summary = str(entry.get("summary") or "").strip()
+            role = str(entry.get("role") or "").strip()
+            label = str(entry.get("label") or "").strip()
+            text = str(entry.get("text") or "").strip()
+            tags = _as_string_list(entry.get("tags"))
+            item: dict[str, Any] = {}
+            if name:
+                item["name"] = name
+            if description:
+                item["description"] = description
+            if summary:
+                item["summary"] = summary
+            if role:
+                item["role"] = role
+            if label:
+                item["label"] = label
+            if text:
+                item["text"] = text
+            if tags:
+                item["tags"] = tags
+            if item:
+                output.append(item)
+        return output
+
+    description = str(value.get("description") or "").strip()
+    description_words = description.split()
+    if len(description_words) > 128:
+        description = " ".join(description_words[:128])
+
+    artifact: StoryArtifact = {
+        "title": str(value.get("title") or "Untitled Story").strip(),
+        "description": description,
+        "plot": _as_string_list(value.get("plot")),
+        "setting": str(value.get("setting") or "").strip(),
+        "style": str(value.get("style") or "").strip(),
+        "tags": _as_string_list(value.get("tags")),
+        "characters_artifact": _as_entity_list(value.get("characters_artifact")),
+        "locations": _as_entity_list(value.get("locations")),
+        "objects": _as_entity_list(value.get("objects")),
+        "opening": str(value.get("opening") or "").strip(),
+        "examples": _as_entity_list(value.get("examples")),
+    }
+    return artifact
+
+
 def _normalize_state(raw_idea: str, state: Dict[str, Any] | None = None) -> WizardState:
     incoming = state or {}
-    return {
+    normalized: WizardState = {
         "raw_idea": raw_idea,
         "world_setting": str(incoming.get("world_setting", "")),
         "characters": _coerce_characters(incoming.get("characters", [])),
         "critique_notes": str(incoming.get("critique_notes", "")),
         "passed_inspection": bool(incoming.get("passed_inspection", False)),
     }
+    story_artifact = _coerce_story_artifact(incoming.get("story_artifact"))
+    if story_artifact:
+        normalized["story_artifact"] = story_artifact
+    return normalized
 
 
 def _all_character_sections(state: WizardState) -> str:
@@ -227,6 +311,71 @@ def _upsert_character(state: WizardState, index: int, details: str) -> list[Char
         base["name"] = inferred_name or f"Character {index + 1}"
     characters[index] = base
     return characters
+
+
+def _extract_first_json_block(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            loaded = json.loads(stripped)
+            if isinstance(loaded, dict):
+                return loaded
+        except json.JSONDecodeError:
+            pass
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        loaded = json.loads(stripped[start : end + 1])
+        if isinstance(loaded, dict):
+            return loaded
+    except json.JSONDecodeError:
+        return None
+    return None
+
+
+def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200) -> StoryArtifact:
+    system_prompt = (
+        "You are a story architect. Return ONLY valid JSON with this schema: "
+        '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
+        '"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}], '
+        '"locations":[{"name":"","description":"","tags":[""]}], '
+        '"objects":[{"name":"","description":"","tags":[""]}], '
+        '"opening":"", "examples":[{"label":"","text":""}]}. '
+        "Use concise language. description must be 128 words max."
+    )
+    generated = call_local_llm(system_prompt, raw_idea, max_length=max_length)
+    loaded = _extract_first_json_block(generated)
+    if loaded is None:
+        loaded = {
+            "title": raw_idea[:80] or "Untitled Story",
+            "description": generated[:800],
+            "plot": [generated[:220]],
+            "setting": "",
+            "style": "neutral",
+            "tags": [],
+            "characters_artifact": [],
+            "locations": [],
+            "objects": [],
+            "opening": "",
+            "examples": [],
+        }
+
+    artifact = _coerce_story_artifact(loaded)
+    if artifact is None:
+        raise HTTPException(status_code=500, detail="Failed to parse generated story artifact")
+    if not artifact["style"]:
+        artifact["style"] = persona_id
+    return artifact
+
+
+def _generate_character_only(raw_idea: str, persona_id: str, max_length: int = 700) -> CharacterState:
+    prompts = get_persona_prompts(persona_id)
+    generated = call_local_llm(prompts.CHARACTER_SYSTEM, raw_idea, max_length=max_length)
+    name = infer_character_name(generated, fallback="Companion")
+    return {"name": name, "details": generated.strip(), "role": "character", "tags": []}
 
 
 def _run_stage_sync(
@@ -636,6 +785,85 @@ async def get_run_by_id(run_id: str) -> Dict[str, Any]:
     return record
 
 
+@router.get("/gallery")
+async def list_gallery_runs(
+    search: str = "",
+    tag: str = "",
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> Dict[str, Any]:
+    listing = list_run_previews(search=search, tag=tag, limit=limit, offset=offset)
+    return {
+        "items": listing["items"],
+        "total": listing["total"],
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.post("/story")
+async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
+    raw_idea: str = str(body.get("raw_idea") or "").strip()
+    if not raw_idea:
+        raise HTTPException(status_code=400, detail="raw_idea is required")
+
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
+    max_length = int(experimentation_config.get("maxLength", 1200))
+
+    artifact = _build_story_artifact(raw_idea, persona_id=persona_id, max_length=max_length)
+    state = _normalize_state(raw_idea, body.get("state"))
+    state["story_artifact"] = artifact
+
+    payload = {
+        "raw_idea": raw_idea,
+        "state": state,
+        "meta": {"mode": "story"},
+        "save_pending": bool(body.get("save_pending", False)),
+    }
+    save_draft_state(payload, "latest")
+    return {"state": state, "story_artifact": artifact}
+
+
+@router.post("/character")
+async def generate_character_only(body: Dict[str, Any]) -> Dict[str, Any]:
+    raw_idea: str = str(body.get("raw_idea") or "").strip()
+    if not raw_idea:
+        raise HTTPException(status_code=400, detail="raw_idea is required")
+
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
+    max_length = int(experimentation_config.get("maxLength", 700))
+    character = _generate_character_only(raw_idea, persona_id=persona_id, max_length=max_length)
+
+    state = _normalize_state(raw_idea, body.get("state"))
+    state["characters"] = [character]
+    payload = {
+        "raw_idea": raw_idea,
+        "state": state,
+        "meta": {"mode": "character"},
+        "save_pending": bool(body.get("save_pending", False)),
+    }
+    save_draft_state(payload, "latest")
+    return {"state": state, "character": character}
+
+
+@router.post("/character-role")
+async def set_character_role(body: Dict[str, Any]) -> Dict[str, Any]:
+    run_id = str(body.get("run_id") or "").strip()
+    role = str(body.get("role") or "").strip().lower()
+    character_index = int(body.get("character_index", 0))
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if role not in {"character", "persona"}:
+        raise HTTPException(status_code=400, detail="role must be character or persona")
+
+    updated = update_character_role(run_id, character_index, role)
+    if not updated:
+        raise HTTPException(status_code=404, detail="run or character not found")
+    return {"ok": True, "run": updated}
+
+
 @router.post("/draft")
 async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
     if bool(body.get("clear", False)):
@@ -684,6 +912,7 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
             "image_prompt": prompt,
         }
     else:
+        _assert_sd_available(sd_config.get("endpoint") if isinstance(sd_config, dict) else None)
         if mode == "image":
             prompt = (prompt_override or "").strip() or str(character.get("image_prompt") or "").strip()
             if not prompt:
@@ -694,7 +923,6 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
         else:
             prompt = _make_sd_prompt(state, character, prompt_override=prompt_override)
 
-        _assert_sd_available(sd_config.get("endpoint") if isinstance(sd_config, dict) else None)
         try:
             image_path, image_data, styled_prompt, resolved_style = _render_sd_image(
                 prompt,

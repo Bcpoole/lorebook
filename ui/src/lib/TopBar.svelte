@@ -1,19 +1,34 @@
 <script>
   let {
     meta = {},
-    ongraph = () => {},
+    activeTab = 'world',
+    onselecttab = () => {},
   } = $props()
+
+  const tabs = [
+    { id: 'world', label: '🌍 World' },
+    { id: 'story', label: '📕 Story' },
+    { id: 'character', label: '🎭 Character' },
+    { id: 'gallery', label: '🏛️ Gallery' },
+    { id: 'graph', label: 'Graph' },
+  ]
 </script>
 
 <header>
   <span class="brand">Lorebook</span>
 
   <div class="controls">
+    <nav class="tabs" aria-label="Primary pages">
+      {#each tabs as tab}
+        <button class="nav-btn" class:active={activeTab === tab.id} onclick={() => onselecttab(tab.id)}>
+          {tab.label}
+        </button>
+      {/each}
+    </nav>
+
     {#if meta.elapsed_ms != null}
       <span class="stats">{meta.elapsed_ms} ms</span>
     {/if}
-
-    <button class="nav-btn" onclick={ongraph}>Graph</button>
   </div>
 </header>
 
@@ -41,6 +56,12 @@
     gap: 1rem;
   }
 
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
   .stats {
     font-size: 0.8rem;
     color: #94a3b8;
@@ -60,5 +81,11 @@
   .nav-btn:hover {
     border-color: #94a3b8;
     color: #f1f5f9;
+  }
+
+  .nav-btn.active {
+    border-color: #60a5fa;
+    background: #1e3a8a;
+    color: #dbeafe;
   }
 </style>
