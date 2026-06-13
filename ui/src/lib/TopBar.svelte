@@ -1,9 +1,15 @@
 <script>
   let {
     meta = {},
+    showStats = false,
     activeTab = 'world',
     onselecttab = () => {},
   } = $props()
+
+  const elapsedMs = $derived.by(() => {
+    const parsed = Number(meta?.elapsed_ms ?? 0)
+    return Number.isFinite(parsed) ? parsed : 0
+  })
 
   const tabs = [
     { id: 'world', label: '🌍 World' },
@@ -26,8 +32,8 @@
       {/each}
     </nav>
 
-    {#if meta.elapsed_ms != null}
-      <span class="stats">{meta.elapsed_ms} ms</span>
+    {#if showStats}
+      <span class="stats">{elapsedMs} ms</span>
     {/if}
   </div>
 </header>
