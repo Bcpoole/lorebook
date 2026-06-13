@@ -90,6 +90,10 @@ Set-Location ..
 ## API Endpoints
 
 - `POST /api/run` - blocking workflow run, saves JSON output to `outputs/runs/`
+- `POST /api/story` - generate structured Story artifact fields (`title`, `description`, `plot`, `locations`, `objects`, etc.)
+- `POST /api/character` - generate one standalone character payload
+- `GET /api/gallery` - list saved run previews with search/tag filtering
+- `POST /api/character-role` - persist character/persona role changes to a saved run
 - `GET /api/stream?raw_idea=...` - SSE stream of per-node updates
 - `GET /api/graph` - Mermaid graph definition for the workflow
 

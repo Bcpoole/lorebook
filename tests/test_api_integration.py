@@ -262,3 +262,64 @@ def test_character_designer_rejects_meta_responses(monkeypatch) -> None:
     character_details = payload["state"]["characters"][0]["details"]
     assert "I understand" not in character_details
     assert "Character: Test Hero" in character_details or "brave and noble" in character_details
+
+
+def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: (
+            '{"title":"Skyfall","description":"A compact description.","plot":["A","B"],'
+            '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
+            '"characters_artifact":[{"name":"Ari","role":"pilot","summary":"ace","tags":["pilot"]}],'
+            '"locations":[{"name":"Dock","description":"windy","tags":["port"]}],'
+            '"objects":[{"name":"Compass","description":"arcane","tags":["artifact"]}],'
+            '"opening":"Once above the storm.","examples":[{"label":"sample","text":"line"}]}'
+        ),
+    )
+
+    client = TestClient(create_app())
+    res = client.post("/api/story", json={"raw_idea": "flying city"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["story_artifact"]["title"] == "Skyfall"
+    assert isinstance(payload["story_artifact"]["characters_artifact"], list)
+
+
+def test_character_endpoint_returns_single_character(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "Character: Mira\nA precise navigator.")
+
+    client = TestClient(create_app())
+    res = client.post("/api/character", json={"raw_idea": "navigator"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["character"]["details"].startswith("Character:")
+    assert payload["character"]["role"] == "character"
+
+
+def test_gallery_endpoint_lists_saved_runs_and_role_toggle() -> None:
+    saved = storage.save_run_result(
+        {
+            "raw_idea": "idea",
+            "state": {"characters": [{"name": "Ari", "details": "pilot", "role": "character"}]},
+            "meta": {},
+        },
+        filename="gallery_case",
+    )
+    client = TestClient(create_app())
+
+    gallery_res = client.get("/api/gallery")
+    assert gallery_res.status_code == 200
+    items = gallery_res.json()["items"]
+    assert any(item["run_id"] == saved["run_id"] for item in items)
+
+    role_res = client.post(
+        "/api/character-role",
+        json={"run_id": saved["run_id"], "character_index": 0, "role": "persona"},
+    )
+    assert role_res.status_code == 200
+    assert role_res.json()["run"]["state"]["characters"][0]["role"] == "persona"

@@ -17,6 +17,7 @@
     llmConnected = true,
     reviewState = null,
     reviewPanelOpen = true,
+    visibleAgentKeys = null,
     onnext = () => {},
     oncontinue = () => {},
     onsave = () => {},
@@ -43,6 +44,19 @@
     editor: 'Editor',
     save_assets: 'Save Assets',
   }
+
+  const visibleEntries = $derived.by(() => {
+    if (!Array.isArray(visibleAgentKeys) || visibleAgentKeys.length === 0) {
+      return Object.entries(agentLabels)
+    }
+    return Object.entries(agentLabels).filter(([key]) => visibleAgentKeys.includes(key))
+  })
+
+  $effect(() => {
+    if (Array.isArray(visibleAgentKeys) && visibleAgentKeys.length > 0 && !visibleAgentKeys.includes(activeAgent)) {
+      activeAgent = visibleAgentKeys[0]
+    }
+  })
 
   let editingLoremaster = $state(false)
   let loremasterDraft = $state('')
@@ -294,7 +308,7 @@
 <div class="agents">
   <div class="workflow-header">
     <nav class="agent-tabs" aria-label="Workflow order">
-      {#each Object.entries(agentLabels) as [key, label], index}
+      {#each visibleEntries as [key, label], index}
         <button
           class="agent-step"
           class:active={activeAgent === key}

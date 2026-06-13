@@ -5,6 +5,9 @@
   import TopBar from './lib/TopBar.svelte'
   import Toast from './lib/Toast.svelte'
   import ExperimentationPanel from './lib/ExperimentationPanel.svelte'
+  import StoryPage from './lib/StoryPage.svelte'
+  import CharacterPage from './lib/CharacterPage.svelte'
+  import GalleryPage from './lib/GalleryPage.svelte'
   import { DraftSyncController } from './lib/draftSync'
   import { PollingQueue } from './lib/pollingQueue'
 
@@ -14,7 +17,7 @@
   let streaming = $state(true)
   let auto = $state(false)
   let showStats = $state(false)
-  let activeTab = $state('agents')
+  let activeTab = $state('world')
   let activeAgentTab = $state('loremaster')
   let graphPanelLoad = $state(null)
   let currentRawIdea = $state('')
@@ -45,6 +48,29 @@
   let showRestoreBanner = $state(true)
   let restoreBannerHovered = $state(false)
   let restoreBannerAutoDismissTimer = null
+  let storyPageState = $state({
+    rawIdea: '',
+    loading: false,
+    error: '',
+    story: null,
+    savedName: '',
+  })
+  let characterPageState = $state({
+    rawIdea: '',
+    loading: false,
+    error: '',
+    workflowState: {
+      raw_idea: '',
+      world_setting: '',
+      characters: [],
+      critique_notes: '',
+      passed_inspection: false,
+    },
+    activeAgent: 'character_designer',
+    pendingSave: null,
+    savedRun: null,
+    savedName: '',
+  })
 
   const DEFAULT_EXPERIMENTATION = {
     general: {
@@ -710,9 +736,15 @@
   }
 
   function openGraphTab() {
-    activeTab = 'graph'
     if (!graphPanelLoad) {
       graphPanelLoad = import('./lib/GraphPanel.svelte')
+    }
+  }
+
+  function selectTopTab(tabId) {
+    activeTab = tabId
+    if (tabId === 'graph') {
+      openGraphTab()
     }
   }
 
@@ -1468,7 +1500,7 @@
   })
 </script>
 
-<TopBar bind:showStats bind:streaming bind:auto {meta} />
+<TopBar {meta} {activeTab} onselecttab={selectTopTab} />
 
 {#if !appServerConnected}
   <div class="llm-alert" role="alert" aria-live="assertive">
@@ -1567,11 +1599,11 @@
     onCancel={cancelExperimentation}
     onSaveSd={saveExperimentation}
     onCancelSd={cancelExperimentation}
-    onOpenGraph={openGraphTab}
   />
 
   <div class="workspace-area">
     <main>
+    {#if activeTab === 'world'}
       <RawIdeaForm
         {running}
         llmConnected={apiReady()}
@@ -1579,8 +1611,6 @@
         onrun={handleRun}
         onstop={handleStopGeneration}
       />
-
-    {#if activeTab === 'agents'}
       <AgentPanel
         bind:workflowState={state}
         {running}
@@ -1610,9 +1640,36 @@
         onregeneratesummary={regenerateReviewSummary}
         ontogglereviewpanel={() => (reviewPanelOpen = !reviewPanelOpen)}
       />
+    {:else if activeTab === 'story'}
+      <StoryPage
+        llmConnected={apiReady()}
+        personaId={experimentationLive.general?.persona || 'blank'}
+        experimentationConfig={experimentationLive.experimentation}
+        bind:rawIdea={storyPageState.rawIdea}
+        bind:loading={storyPageState.loading}
+        bind:error={storyPageState.error}
+        bind:story={storyPageState.story}
+        bind:savedName={storyPageState.savedName}
+      />
+    {:else if activeTab === 'character'}
+      <CharacterPage
+        llmConnected={apiReady()}
+        personaId={experimentationLive.general?.persona || 'blank'}
+        experimentationConfig={experimentationLive.experimentation}
+        bind:rawIdea={characterPageState.rawIdea}
+        bind:loading={characterPageState.loading}
+        bind:error={characterPageState.error}
+        bind:workflowState={characterPageState.workflowState}
+        bind:activeAgent={characterPageState.activeAgent}
+        bind:pendingSave={characterPageState.pendingSave}
+        bind:savedRun={characterPageState.savedRun}
+        bind:savedName={characterPageState.savedName}
+      />
+    {:else if activeTab === 'gallery'}
+      <GalleryPage />
     {:else if activeTab === 'graph'}
       <div class="graph-section">
-        <button class="back-btn" onclick={() => (activeTab = 'agents')}>← Back</button>
+        <button class="back-btn" onclick={() => (activeTab = 'world')}>← Back</button>
         {#if graphPanelLoad}
           {#await graphPanelLoad}
             <p class="loading">Loading graph…</p>
