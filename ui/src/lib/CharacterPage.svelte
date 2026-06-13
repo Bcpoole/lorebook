@@ -1,4 +1,6 @@
 <script>
+  import { onDestroy } from 'svelte'
+
   import AgentPanel from './AgentPanel.svelte'
 
   let {
@@ -21,6 +23,30 @@
     savedName = $bindable(''),
   } = $props()
 
+  let activeAbortController = $state(null)
+  let activeGenerationId = $state(0)
+
+  function isAbortError(error) {
+    return error?.name === 'AbortError'
+  }
+
+  function stopCharacterGeneration() {
+    activeGenerationId += 1
+    if (activeAbortController) {
+      activeAbortController.abort()
+      activeAbortController = null
+    }
+    loading = false
+  }
+
+  function handleGenerateClick() {
+    if (loading) {
+      stopCharacterGeneration()
+      return
+    }
+    void generateCharacter()
+  }
+
   function markPendingSave() {
     pendingSave = {
       raw_idea: rawIdea,
@@ -31,6 +57,9 @@
 
   async function generateCharacter(directive = '') {
     if (!rawIdea.trim() || loading || !llmConnected) return
+    const generationId = ++activeGenerationId
+    const controller = new AbortController()
+    activeAbortController = controller
     loading = true
     error = ''
     savedName = ''
@@ -40,6 +69,7 @@
       const res = await fetch('/api/character', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           raw_idea: prompt,
           state: workflowState,
@@ -56,10 +86,14 @@
       workflowState = payload.state
       activeAgent = 'character_designer'
       markPendingSave()
-    } catch {
+    } catch (fetchError) {
+      if (isAbortError(fetchError)) return
       error = 'Failed to generate character.'
     } finally {
-      loading = false
+      if (generationId === activeGenerationId) {
+        activeAbortController = null
+        loading = false
+      }
     }
   }
 
@@ -110,14 +144,18 @@
     savedName = payload.filename
     pendingSave = null
   }
+
+  onDestroy(() => {
+    stopCharacterGeneration()
+  })
 </script>
 
 <section class="character-page">
   <h2>Character Generator</h2>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the character concept..." disabled={loading}></textarea>
   <div class="actions">
-    <button onclick={() => generateCharacter()} disabled={!rawIdea.trim() || loading || !llmConnected}>
-      {loading ? 'Generating…' : 'Generate Character'}
+    <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
+      {loading ? 'Generating… Click to stop' : 'Generate Character'}
     </button>
     <button class="secondary" onclick={saveCharacter} disabled={!pendingSave}>Save</button>
   </div>

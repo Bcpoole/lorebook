@@ -1,4 +1,6 @@
 <script>
+  import { onDestroy } from 'svelte'
+
   import MarkdownBlock from './MarkdownBlock.svelte'
 
   let {
@@ -12,8 +14,35 @@
     savedName = $bindable(''),
   } = $props()
 
+  let activeAbortController = $state(null)
+  let activeGenerationId = $state(0)
+
+  function isAbortError(error) {
+    return error?.name === 'AbortError'
+  }
+
+  function stopStoryGeneration() {
+    activeGenerationId += 1
+    if (activeAbortController) {
+      activeAbortController.abort()
+      activeAbortController = null
+    }
+    loading = false
+  }
+
+  function handleGenerateClick() {
+    if (loading) {
+      stopStoryGeneration()
+      return
+    }
+    void generateStory()
+  }
+
   async function generateStory() {
     if (!rawIdea.trim() || loading || !llmConnected) return
+    const generationId = ++activeGenerationId
+    const controller = new AbortController()
+    activeAbortController = controller
     loading = true
     error = ''
     savedName = ''
@@ -21,6 +50,7 @@
       const res = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           raw_idea: rawIdea,
           persona_id: personaId,
@@ -34,10 +64,14 @@
       }
       const payload = await res.json()
       story = payload.story_artifact
-    } catch {
+    } catch (fetchError) {
+      if (isAbortError(fetchError)) return
       error = 'Failed to generate story.'
     } finally {
-      loading = false
+      if (generationId === activeGenerationId) {
+        activeAbortController = null
+        loading = false
+      }
     }
   }
 
@@ -59,14 +93,18 @@
     const payload = await res.json()
     savedName = payload.filename
   }
+
+  onDestroy(() => {
+    stopStoryGeneration()
+  })
 </script>
 
 <section class="story-page">
   <h2>Story Artifact</h2>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the story concept..." disabled={loading}></textarea>
   <div class="actions">
-    <button onclick={generateStory} disabled={!rawIdea.trim() || loading || !llmConnected}>
-      {loading ? 'Generating…' : 'Generate Story'}
+    <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
+      {loading ? 'Generating… Click to stop' : 'Generate Story'}
     </button>
     <button class="secondary" onclick={saveStory} disabled={!story}>Save</button>
   </div>
