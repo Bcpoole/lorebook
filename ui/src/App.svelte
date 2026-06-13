@@ -12,7 +12,7 @@
   import { PollingQueue } from './lib/pollingQueue'
 
   let state = $state({})
-  let meta = $state({})
+  let meta = $state({ elapsed_ms: 0 })
   let running = $state(false)
   let streaming = $state(true)
   let auto = $state(false)
@@ -242,6 +242,14 @@
     return false
   }
 
+  function normalizeMeta(nextMeta, options = {}) {
+    const { resetElapsed = false } = options
+    const normalized = { ...(nextMeta ?? {}) }
+    const elapsed = resetElapsed ? 0 : Number(normalized.elapsed_ms ?? 0)
+    normalized.elapsed_ms = Number.isFinite(elapsed) ? elapsed : 0
+    return normalized
+  }
+
   function getStageOutputFromState(localState, stage, characterIndex = 0) {
     if (!localState) return ''
     if (stage === 'loremaster') return localState.world_setting ?? ''
@@ -390,8 +398,8 @@
 
     currentRawIdea = payload.raw_idea ?? ''
     state = payload.state ?? {}
-    meta = payload.meta ?? {}
-    pendingSave = payload.save_pending ? { raw_idea: currentRawIdea, state, meta } : null
+    meta = normalizeMeta(payload.meta, { resetElapsed: true })
+    pendingSave = payload.save_pending ? { raw_idea: currentRawIdea, state, meta: normalizeMeta(payload.meta, { resetElapsed: true }) } : null
     savedRun = source === 'run' && payload.run_id ? {
       run_id: payload.run_id,
       run_path: payload.run_path,
@@ -616,10 +624,13 @@
       return { clear: true }
     }
 
+    const draftMeta = { ...(meta ?? {}) }
+    delete draftMeta.elapsed_ms
+
     return {
       raw_idea: currentRawIdea,
       state,
-      meta,
+      meta: draftMeta,
       save_pending: Boolean(pendingSave),
     }
   }
@@ -642,8 +653,6 @@
     const rawLength = (currentRawIdea ?? '').length
     const nextStageValue = meta?.next_stage ?? ''
     const stageValue = meta?.stage ?? ''
-    const elapsedValue = meta?.elapsed_ms ?? ''
-
     return [
       rawLength,
       worldLength,
@@ -655,7 +664,6 @@
       state?.passed_inspection ? 1 : 0,
       nextStageValue,
       stageValue,
-      elapsedValue,
       pendingSave ? 1 : 0,
     ].join('|')
   }
@@ -937,7 +945,7 @@
     clearRestoreBannerAutoDismiss()
     currentRawIdea = rawIdea
     state = freshWorkflowState(rawIdea)
-    meta = {}
+    meta = normalizeMeta(null)
     pendingSave = null
     savedRun = null
     restoredDraft = null
@@ -995,7 +1003,7 @@
       es.addEventListener('run-complete', (e) => {
         const data = JSON.parse(e.data)
         state = data.state
-        meta = data.meta
+        meta = normalizeMeta(data.meta)
         savedRun = { run_id: data.run_id, run_path: data.run_path, filename: data.filename }
         pendingSave = null
         toastMessage = `Auto-saved as ${data.filename}`
@@ -1030,7 +1038,7 @@
         })
         const data = await res.json()
         state = data.state
-        meta = data.meta
+        meta = normalizeMeta(data.meta)
         if (data.pending_save) {
           pendingSave = { raw_idea: rawIdea, state: data.state, meta: data.meta }
           await setSmartFilename(rawIdea)
@@ -1106,7 +1114,7 @@
       } else {
         state = { ...data.state, _lastNode: stage }
       }
-      meta = data.meta
+      meta = normalizeMeta(data.meta)
       nextStage = data.next_stage ?? null
       
       // Auto-switch to the stage that just ran so output is visible
@@ -1208,7 +1216,7 @@
           } else {
             state = { ...payload.state, _lastNode: stage }
           }
-          meta = payload.meta ?? {}
+          meta = normalizeMeta(payload.meta)
           nextStage = payload.next_stage ?? null
           // Auto-switch after manual stage run
           activeAgentTab = stage
@@ -1503,7 +1511,7 @@
   })
 </script>
 
-<TopBar {meta} {activeTab} onselecttab={selectTopTab} />
+<TopBar {meta} {activeTab} {showStats} onselecttab={selectTopTab} />
 
 {#if !appServerConnected}
   <div class="llm-alert" role="alert" aria-live="assertive">
@@ -1548,7 +1556,7 @@
           restoredDraft = null
           outputStale = false
           state = {}
-          meta = {}
+          meta = normalizeMeta(null)
           currentRawIdea = ''
           pendingSave = null
           savedRun = null
