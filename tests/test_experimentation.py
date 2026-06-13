@@ -14,7 +14,7 @@ from lorebook.api.app import create_app
 def app_with_temp_storage():
     """Create an app with temporary storage directory."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        with mock.patch('lorebook.api.routes.experimentation.get_outputs_root', return_value=Path(tmpdir)):
+        with mock.patch("lorebook.api.storage.get_outputs_root", return_value=Path(tmpdir)):
             app = create_app()
             yield app
 
