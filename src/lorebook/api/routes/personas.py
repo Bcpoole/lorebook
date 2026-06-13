@@ -1,8 +1,6 @@
 """API routes for listing personas and serving their avatars."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
@@ -35,9 +33,21 @@ async def get_persona_avatar(persona_id: str) -> FileResponse:
     if not persona_id.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid persona id")
 
-    for ext in (".svg", ".png", ".jpg", ".webp"):
-        candidate = AVATARS_DIR / f"{persona_id}{ext}"
-        if candidate.exists():
-            return FileResponse(str(candidate))
+    meta = next((persona for persona in list_personas() if persona.id == persona_id), None)
+    if meta is None or not meta.avatar:
+        raise HTTPException(status_code=404, detail="Avatar not found")
 
-    raise HTTPException(status_code=404, detail="Avatar not found")
+    candidate = (AVATARS_DIR / meta.avatar).resolve()
+    avatars_root = AVATARS_DIR.resolve()
+    if avatars_root not in candidate.parents or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    return FileResponse(
+        str(candidate),
+        headers={
+            # Personas can be edited during local dev, so avoid stale browser caching.
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
