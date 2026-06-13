@@ -1513,16 +1513,6 @@
 
 <TopBar {meta} {activeTab} {showStats} onselecttab={selectTopTab} />
 
-{#if !appServerConnected}
-  <div class="llm-alert" role="alert" aria-live="assertive">
-    Application server is down. Waiting for reconnect.
-  </div>
-{:else if !llmConnected}
-  <div class="llm-alert" role="alert" aria-live="assertive">
-    LLM connection is gone. Checking again in {llmCountdownDisplay} second{llmCountdownDisplay === 1 ? '' : 's'}.
-  </div>
-{/if}
-
 {#if restoredDraft && !outputStale && showRestoreBanner}
   <div 
     class="restored-card" 
@@ -1655,6 +1645,16 @@
   />
 
   <div class="workspace-area">
+    {#if !appServerConnected}
+      <div class="llm-alert" role="alert" aria-live="assertive">
+        Application server is down. Waiting for reconnect.
+      </div>
+    {:else if !llmConnected}
+      <div class="llm-alert" role="alert" aria-live="assertive">
+        LLM connection is gone. Checking again in {llmCountdownDisplay} second{llmCountdownDisplay === 1 ? '' : 's'}.
+      </div>
+    {/if}
+
     <main>
     {#if activeTab === 'world'}
       <RawIdeaForm
@@ -1763,18 +1763,25 @@
     flex: 1;
     min-width: 0;
     display: flex;
+    position: relative;
   }
 
   .llm-alert {
-    max-width: 1080px;
-    margin: 0.75rem auto 0;
-    padding: 0.55rem 0.9rem;
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    width: min(1080px, calc(100% - 2rem));
+    padding: 0.5rem 0.9rem;
     border: 1px solid #dc2626;
-    border-left: 6px solid #dc2626;
+    border-left: 4px solid #dc2626;
     border-radius: 8px;
-    background: #fef2f2;
+    background: rgba(254, 242, 242, 0.88);
     color: #991b1b;
     font-weight: 700;
+    backdrop-filter: blur(2px);
+    pointer-events: none;
   }
 
   main {
