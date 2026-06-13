@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
@@ -56,6 +57,45 @@ def _trim_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]).strip()
 
 
+def _image_data_from_file(image_file: str) -> str:
+    """Load image bytes from disk and return a data URI."""
+    raw = (image_file or "").strip()
+    if not raw:
+        return ""
+
+    outputs_root = get_outputs_root()
+    candidates: list[Path] = []
+    source = Path(raw)
+    if source.is_absolute():
+        candidates.append(source)
+    else:
+        candidates.append(outputs_root / source)
+        candidates.append(outputs_root / "images" / source)
+
+    image_path: Path | None = None
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            image_path = candidate
+            break
+    if image_path is None:
+        return ""
+
+    try:
+        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    except OSError:
+        return ""
+
+    suffix = image_path.suffix.lower()
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }.get(suffix, "image/png")
+    return f"data:{mime};base64,{encoded}"
+
+
 def _make_character_urn() -> str:
     return f"urn:lorebook:character:{uuid4().hex}"
 
@@ -90,6 +130,32 @@ def _clean_state_for_disk(state: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _repair_character_names(state: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Repair placeholder character names from details content."""
+    characters = state.get("characters")
+    if not isinstance(characters, list):
+        return state, False
+
+    changed = False
+    repaired: list[Any] = []
+    for idx, character in enumerate(characters, start=1):
+        if not isinstance(character, dict):
+            repaired.append(character)
+            continue
+        updated = dict(character)
+        current_name = str(updated.get("name") or "")
+        if should_replace_character_name(current_name):
+            inferred = infer_character_name(str(updated.get("details") or ""), fallback=f"Character {idx}")
+            if inferred and inferred != current_name:
+                updated["name"] = inferred
+                changed = True
+        repaired.append(updated)
+
+    if not changed:
+        return state, False
+    return {**state, "characters": repaired}, True
+
+
 def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
     state = record.get("state") if isinstance(record.get("state"), dict) else {}
     story = state.get("story_artifact") if isinstance(state.get("story_artifact"), dict) else {}
@@ -101,21 +167,26 @@ def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
 
     story_tags = _normalize_tags(story.get("tags"))
     character_tags: list[str] = []
-    # Use the first character with image data as the card avatar
+    # Use the first character for identity text, and first available image_data for avatar
     avatar_data = ""
     avatar_name = ""
     avatar_summary = ""
+    avatar_identity_selected = False
     for character in characters:
         if not isinstance(character, dict):
             continue
-        if not avatar_data:
-            # image_data is present in live state; image_file is on disk path
-            avatar_data = str(character.get("image_data") or "")
+        if not avatar_identity_selected:
             raw_name = str(character.get("name") or "")
             if should_replace_character_name(raw_name):
                 raw_name = infer_character_name(str(character.get("details") or ""), fallback="")
             avatar_name = raw_name
             avatar_summary = str(character.get("summary") or "")
+            avatar_identity_selected = True
+        if not avatar_data:
+            # image_data is present in live state; image_file is on disk path
+            avatar_data = str(character.get("image_data") or "")
+            if not avatar_data:
+                avatar_data = _image_data_from_file(str(character.get("image_file") or ""))
         character_tags.extend(_normalize_tags(character.get("tags")))
     tags = list(dict.fromkeys([*story_tags, *character_tags]))
     roles = [
@@ -196,6 +267,14 @@ def load_run(run_id: str) -> dict[str, Any] | None:
     if not run_path.exists():
         return None
     record = json.loads(run_path.read_text(encoding="utf-8"))
+    state = record.get("state")
+    if isinstance(state, dict):
+        repaired_state, changed = _repair_character_names(state)
+        if changed:
+            record["state"] = repaired_state
+            record["preview"] = _preview_from_record(record)
+            run_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+            return record
     if not isinstance(record.get("preview"), dict):
         record["preview"] = _preview_from_record(record)
     return record
@@ -247,7 +326,12 @@ def list_run_previews(
         if run_path.name.startswith("_"):
             continue
         record = json.loads(run_path.read_text(encoding="utf-8"))
-        preview = record.get("preview") if isinstance(record.get("preview"), dict) else _preview_from_record(record)
+        state = record.get("state")
+        if isinstance(state, dict):
+            repaired_state, changed = _repair_character_names(state)
+            if changed:
+                record["state"] = repaired_state
+        preview = _preview_from_record(record)
         # Merge run-level favorite into preview (in case preview was built before favorite was set)
         preview["favorite"] = bool(record.get("favorite", preview.get("favorite", False)))
         if favorites_only and not preview.get("favorite"):

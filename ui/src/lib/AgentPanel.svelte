@@ -26,6 +26,7 @@
     onrunmodule = async () => {},
     oncharacterimage = async () => {},
     onspawnrelated = async () => {},
+    onsavecharacter = async () => {},
     onapprovereview = () => {},
     onrejectreview = () => {},
     oneditreview = () => {},
@@ -84,18 +85,44 @@
 
   function extractCharacterName(details) {
     if (!details || typeof details !== 'string') return ''
-    const firstLine = details.split('\n')[0].trim()
-    if (!firstLine) return ''
-    
-    // Remove common prefixes like "Companion Character:", "Character:", "## ", etc.
-    let name = firstLine
-      .replace(/^(Companion\s+)?Character:\s*/i, '')
-      .replace(/^#+\s*/, '')
-      .replace(/^\*\*/, '')
-      .replace(/\*\*$/, '')
-      .trim()
-    
-    return name.length > 0 && name.length < 100 ? name : ''
+    const lines = details.split('\n').map((line) => line.trim()).filter(Boolean)
+
+    for (const line of lines) {
+      const match = line.match(/^(?:[-*]\s*)?(?:\*\*|__)?name(?:\*\*|__)?:?(?:\*\*|__)?\s*(.+?)\s*$/i)
+      if (match && match[1]) {
+        const parsed = match[1].replace(/[*_`]/g, '').trim()
+        if (parsed.length > 0 && parsed.length < 100) return parsed
+      }
+    }
+
+    for (const line of lines) {
+      const header = line.replace(/^#+\s*/, '').replace(/[*_`]/g, '').trim()
+      if (!header) continue
+      const lower = header.toLowerCase()
+      if (
+        lower === 'character card profile' ||
+        lower === 'sillytavern dialogue attributes' ||
+        lower === 'appearance' ||
+        lower === 'personality' ||
+        lower === 'background' ||
+        lower === 'abilities'
+      ) {
+        continue
+      }
+      if (header.length > 0 && header.length < 100) return header
+    }
+
+    return ''
+  }
+
+  function shouldReplaceCharacterName(name) {
+    const value = (name ?? '').trim()
+    if (!value) return true
+    return (
+      /^companion(?:\s+\d+)?$/i.test(value) ||
+      /^character card profile$/i.test(value) ||
+      /^character(?:\s+\d+)?$/i.test(value)
+    )
   }
 
   // Auto-extract and set character names when they're generated
@@ -103,8 +130,8 @@
     if (!characters || characters.length === 0) return
     
     const updated = characters.map((char, idx) => {
-      // Only update name if it's empty and we have details
-      if ((!char.name || char.name.startsWith('Companion')) && char.details) {
+      // Only update name if it's placeholder/generic and we have details
+      if (shouldReplaceCharacterName(char.name) && char.details) {
         const extracted = extractCharacterName(char.details)
         if (extracted && extracted !== char.name) {
           return { ...char, name: extracted }
@@ -439,7 +466,7 @@
           {@const headerImg = imageSrc(character)}
           {@const hook = extractCharacterHook(character.details)}
           {@const isLoading = isCharacterLoading(index)}
-          <article class="character-card" class:selected={isSelected} class:sticky={isSelected}>
+          <article class="character-card" class:selected={isSelected}>
             {#if !isCollapsed && !isLoading}
               <div class="character-compact-header">
                 <div class="compact-info">
@@ -485,6 +512,13 @@
               <div class="character-actions">
                 <button class="select-btn" onclick={() => selectCharacter(index)}>
                   {isSelected ? 'Selected' : 'Select'}
+                </button>
+                <button
+                  class="save-char-btn"
+                  onclick={() => onsavecharacter(index)}
+                  disabled={running || !llmConnected || !character?.details?.trim()}
+                >
+                  Save
                 </button>
                 <button class="edit-btn" onclick={() => startEditCharacter(index)} disabled={running}>✎ Edit</button>
                 <button class="delete-btn" onclick={() => askDeleteCharacter(index)} disabled={running || characters.length === 1}>🗑 Delete</button>
@@ -1112,12 +1146,6 @@
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
   }
 
-  .character-card.sticky {
-    position: sticky;
-    top: 0.5rem;
-    z-index: 10;
-  }
-
   .character-compact-header {
     display: flex;
     align-items: center;
@@ -1225,6 +1253,7 @@
   }
 
   .select-btn,
+  .save-char-btn,
   .edit-btn,
   .confirm-btn,
   .cancel-btn,
@@ -1240,6 +1269,11 @@
   .select-btn {
     border-color: #2563eb;
     color: #1d4ed8;
+  }
+
+  .save-char-btn {
+    border-color: #334155;
+    color: #334155;
   }
 
   .delete-btn {

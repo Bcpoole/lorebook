@@ -160,12 +160,23 @@
     }
   }
 
-  async function saveCharacter() {
-    if (!pendingSave) return
+  async function saveCharacterByIndex(index) {
+    const characters = Array.isArray(workflowState?.characters) ? workflowState.characters : []
+    if (index < 0 || index >= characters.length) return
+    const target = characters[index]
+    if (!target || !String(target.details || '').trim()) return
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...pendingSave }),
+      body: JSON.stringify({
+        raw_idea: rawIdea,
+        state: {
+          ...workflowState,
+          characters: [{ ...target }],
+        },
+        meta: { source: 'character-page' },
+        persona_id: personaId,
+      }),
     })
     if (!res.ok) {
       error = 'Failed to save character.'
@@ -174,7 +185,6 @@
     const payload = await res.json()
     savedRun = payload
     savedName = payload.filename
-    pendingSave = null
   }
 
   onDestroy(() => {
@@ -189,7 +199,6 @@
     <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
       {loading ? 'Generating… Click to stop' : 'Generate Character'}
     </button>
-    <button class="secondary" onclick={saveCharacter} disabled={!pendingSave}>Save</button>
   </div>
   {#if error}<p class="error">{error}</p>{/if}
   {#if savedName}<p class="ok">Saved as {savedName}</p>{/if}
@@ -207,6 +216,7 @@
     onrunmodule={handleModuleRun}
     oncharacterimage={handleCharacterImageGenerate}
     onspawnrelated={handleSpawnRelated}
+    onsavecharacter={saveCharacterByIndex}
   />
 </section>
 
@@ -215,7 +225,6 @@
   textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem; }
   .actions { display: flex; gap: 0.5rem; }
   button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
-  button.secondary { background: #334155; border-color: #334155; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .error { color: #b91c1c; }
   .ok { color: #047857; }

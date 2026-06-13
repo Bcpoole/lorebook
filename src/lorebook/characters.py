@@ -8,7 +8,7 @@ _GENERIC_HEADER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _NAME_FIELD_PATTERN = re.compile(
-    r"^(?:\*\*|__)?name(?:\*\*|__)?:?\s*(.+?)\s*$",
+    r"^(?:[-*]\s*)?(?:\*\*|__)?name(?:\*\*|__)?:?(?:\*\*|__)?\s*(.+?)\s*$",
     re.IGNORECASE,
 )
 _HEADER_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$")
@@ -16,6 +16,7 @@ _MARKDOWN_DECORATION_PATTERN = re.compile(r"^[*_`#\-\s]+|[*_`\s]+$")
 
 
 def infer_character_name(details: str, fallback: str = "") -> str:
+    # First pass: prefer explicit Name fields (e.g. **Name:** ...)
     for raw_line in details.splitlines():
         line = raw_line.strip()
         if not line:
@@ -24,6 +25,12 @@ def infer_character_name(details: str, fallback: str = "") -> str:
         field_match = _NAME_FIELD_PATTERN.match(line)
         if field_match:
             return _clean_name(field_match.group(1), fallback)
+
+    # Second pass: fall back to markdown headers if no Name field exists
+    for raw_line in details.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
 
         header_match = _HEADER_PATTERN.match(line)
         if header_match:
