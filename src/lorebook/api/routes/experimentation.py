@@ -1,8 +1,6 @@
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 
-from ..storage import get_outputs_root
+from .. import storage
 
 router = APIRouter(prefix="/experimentation", tags=["experimentation"])
 
@@ -38,7 +36,7 @@ DEFAULT_EXPERIMENTATION_CONFIG = {
 
 def get_experimentation_config_path():
     """Get the path to the experimentation config file."""
-    base_dir = get_outputs_root()
+    base_dir = storage.get_outputs_root()
     return base_dir / "experimentation.json"
 
 
