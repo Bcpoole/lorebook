@@ -1,0 +1,104 @@
+.holo-variant-holo .card__shine {
+  background-image:
+    repeating-linear-gradient(
+      110deg,
+      #c929f1,
+      #0dbde9,
+      #21e985,
+      #eedf10,
+      #f80e35,
+      #c929f1,
+      #0dbde9,
+      #21e985,
+      #eedf10,
+      #f80e35,
+      #c929f1,
+      #0dbde9,
+      #21e985,
+      #eedf10,
+      #f80e35
+    ),
+    repeating-linear-gradient(90deg, #000 0, #000 2px, #666 2px, #666 4px);
+  background-position:
+    calc(((50% - var(--background-x, 50%)) * 2.6) + 50%)
+      calc(((50% - var(--background-y, 50%)) * 3.5) + 50%),
+    center center;
+  background-size: 400% 400%, cover;
+  background-blend-mode: overlay;
+  filter: brightness(1.1) contrast(1.1) saturate(1.2);
+  mix-blend-mode: color-dodge;
+}
+
+.holo-variant-holo .card__shine::before {
+  content: '';
+  --bars: 3%;
+  --bar-color: hsla(0, 0%, 70%, 1);
+  --bar-bg: hsla(0, 0%, 0%, 1);
+  display: block;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      var(--bar-bg) calc(var(--bars) * 2),
+      var(--bar-color) calc(var(--bars) * 3),
+      var(--bar-bg) calc(var(--bars) * 3.5),
+      var(--bar-color) calc(var(--bars) * 4),
+      var(--bar-bg) calc(var(--bars) * 5),
+      var(--bar-bg) calc(var(--bars) * 14)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      var(--bar-bg) calc(var(--bars) * 2),
+      var(--bar-color) calc(var(--bars) * 3),
+      var(--bar-bg) calc(var(--bars) * 3.5),
+      var(--bar-color) calc(var(--bars) * 4),
+      var(--bar-bg) calc(var(--bars) * 5),
+      var(--bar-bg) calc(var(--bars) * 10)
+    );
+  background-position:
+    calc(
+        (((50% - var(--background-x, 50%)) * 1.65) + 50%) +
+          (var(--background-y, 50%) * 0.5)
+      )
+      var(--background-x, 50%),
+    calc(
+        (((50% - var(--background-x, 50%)) * -0.9) + 50%) -
+          (var(--background-y, 50%) * 0.75)
+      )
+      var(--background-y, 50%);
+  background-size: 200% 200%, 200% 200%;
+  background-blend-mode: screen;
+  filter: brightness(1.15) contrast(1.1);
+  mix-blend-mode: hard-light;
+}
+
+.holo-variant-holo .card__shine::after {
+  content: '';
+  display: block;
+  background-image: radial-gradient(
+    farthest-corner circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+    hsla(0, 0%, 90%, 0.8) 0%,
+    hsla(0, 0%, 78%, 0.1) 25%,
+    hsl(0, 0%, 0%) 90%
+  );
+  mix-blend-mode: luminosity;
+  filter: brightness(0.6) contrast(4);
+}
+
+.holo-variant-holo .card__glare {
+  opacity: calc(var(--card-opacity, 0) * 0.8);
+  filter: brightness(0.8) contrast(1.5);
+  mix-blend-mode: overlay;
+}
+
+.holo-variant-holo .card__glare::after {
+  content: '';
+  display: block;
+  background-image: radial-gradient(
+    farthest-corner circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+    hsl(180, 100%, 95%) 5%,
+    hsla(0, 0%, 39%, 0.25) 55%,
+    hsla(0, 0%, 0%, 0.36) 110%
+  );
+  mix-blend-mode: overlay;
+  filter: brightness(0.6) contrast(3);
+}

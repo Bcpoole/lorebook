@@ -1,0 +1,37 @@
+.holo-variant-reverse-holo .card__shine {
+  background-image:
+    radial-gradient(
+      circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      #fff 5%,
+      #000 50%,
+      #fff 80%
+    ),
+    linear-gradient(-45deg, #000 15%, #fff, #000 85%),
+    repeating-linear-gradient(
+      110deg,
+      #c929f1,
+      #0dbde9,
+      #21e985,
+      #eedf10,
+      #f80e35,
+      #c929f1,
+      #0dbde9,
+      #21e985,
+      #eedf10,
+      #f80e35
+    );
+  background-blend-mode: soft-light, difference, normal;
+  background-size: 120% 120%, 200% 200%, cover;
+  background-position:
+    center,
+    calc(100% * var(--pointer-from-left, 0.5)) calc(100% * var(--pointer-from-top, 0.5)),
+    center;
+  filter: brightness(0.55) contrast(1.5) saturate(1);
+  mix-blend-mode: color-dodge;
+  opacity: calc((1.5 * var(--card-opacity, 0)) - var(--pointer-from-center, 0));
+}
+
+.holo-variant-reverse-holo .card__glare {
+  opacity: var(--card-opacity, 0);
+  filter: brightness(0.7) contrast(1.5);
+}

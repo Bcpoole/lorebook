@@ -3,13 +3,30 @@
   import MarkdownBlock from './MarkdownBlock.svelte'
   import PokeHoloCard from './PokeHoloCard.svelte'
 
+  // ── State ──────────────────────────────────────────────────
   let items = $state([])
   let loading = $state(false)
   let error = $state('')
   let search = $state('')
   let tag = $state('')
-  let selected = $state(null)
+  let favoritesOnly = $state(false)
 
+  // Modal
+  let selectedItem = $state(null) // gallery item (immediate, from local list)
+  let selected = $state(null) // full run object (loaded from API)
+  let modalLoading = $state(false)
+  let flipped = $state(false)
+  let activeTab = $state('bio')
+  let roleDdOpen = $state(false)
+
+  // Navigation history (for relationship traversal)
+  let navHistory = $state([]) // [{run_id, character_name}]
+  let navForward = $state([]) // [{run_id, character_name}]
+
+  // Derived: first character in the selected run
+  let currentCharacter = $derived(selected?.state?.characters?.[0] ?? null)
+
+  // ── API helpers ────────────────────────────────────────────
   async function loadGallery() {
     loading = true
     error = ''
@@ -17,11 +34,9 @@
       const params = new URLSearchParams()
       if (search.trim()) params.set('search', search.trim())
       if (tag.trim()) params.set('tag', tag.trim().toLowerCase())
+      if (favoritesOnly) params.set('favorites_only', 'true')
       const res = await fetch(`/api/gallery?${params}`)
-      if (!res.ok) {
-        error = 'Failed to load gallery.'
-        return
-      }
+      if (!res.ok) { error = 'Failed to load gallery.'; return }
       const payload = await res.json()
       items = payload.items ?? []
     } catch {
@@ -32,87 +47,901 @@
   }
 
   async function openRun(runId) {
-    const res = await fetch(`/api/runs/${runId}`)
-    if (!res.ok) return
-    selected = await res.json()
-  }
-
-  async function setRole(runId, index, role) {
-    const res = await fetch('/api/character-role', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_id: runId, character_index: index, role }),
-    })
-    if (!res.ok) return
-    await loadGallery()
-    if (selected?.run_id === runId) {
-      selected = await res.json().then((payload) => payload.run)
+    selectedItem = items.find((i) => i.run_id === runId) ?? null
+    selected = null
+    flipped = false
+    activeTab = 'bio'
+    roleDdOpen = false
+    navHistory = []
+    navForward = []
+    modalLoading = true
+    try {
+      const res = await fetch(`/api/runs/${runId}`)
+      if (!res.ok) return
+      selected = await res.json()
+    } finally {
+      modalLoading = false
     }
   }
 
-  onMount(() => {
-    void loadGallery()
-  })
+  async function navigateToRun(runId, newHistory, newForward) {
+    modalLoading = true
+    flipped = true
+    activeTab = 'bio'
+    roleDdOpen = false
+    try {
+      const res = await fetch(`/api/runs/${runId}`)
+      if (!res.ok) return
+      selected = await res.json()
+      selectedItem = items.find((i) => i.run_id === runId) ?? selectedItem
+      navHistory = newHistory
+      navForward = newForward
+    } finally {
+      modalLoading = false
+    }
+  }
+
+  function closeModal() {
+    selectedItem = null
+    selected = null
+    flipped = false
+    navHistory = []
+    navForward = []
+  }
+
+  async function toggleFavorite(runId) {
+    const res = await fetch(`/api/gallery/${runId}/favorite`, { method: 'POST' })
+    if (!res.ok) return
+    const payload = await res.json()
+    items = items.map((i) => (i.run_id === runId ? { ...i, favorite: payload.favorite } : i))
+    if (selectedItem?.run_id === runId) {
+      selectedItem = { ...selectedItem, favorite: payload.favorite }
+    }
+  }
+
+  async function setRole(index, role) {
+    if (!selected) return
+    roleDdOpen = false
+    const res = await fetch('/api/character-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: selected.run_id, character_index: index, role }),
+    })
+    if (!res.ok) return
+    const payload = await res.json()
+    selected = payload.run
+    await loadGallery()
+    if (selectedItem) {
+      selectedItem = items.find((i) => i.run_id === selected?.run_id) ?? selectedItem
+    }
+  }
+
+  // ── Navigation helpers ─────────────────────────────────────
+  function navBack() {
+    if (navHistory.length === 0 || !selected) return
+    const entry = { run_id: selected.run_id, character_name: currentCharacter?.name ?? 'Character' }
+    const newForward = [entry, ...navForward].slice(0, 20)
+    const newHistory = navHistory.slice(0, -1)
+    const { run_id } = navHistory[navHistory.length - 1]
+    void navigateToRun(run_id, newHistory, newForward)
+  }
+
+  function navForwardFn() {
+    if (navForward.length === 0 || !selected) return
+    const entry = { run_id: selected.run_id, character_name: currentCharacter?.name ?? 'Character' }
+    const newHistory = [...navHistory, entry].slice(0, 20)
+    const newForward = navForward.slice(1)
+    const { run_id } = navForward[0]
+    void navigateToRun(run_id, newHistory, newForward)
+  }
+
+  // ── Utilities ──────────────────────────────────────────────
+  function cardVariantFor(item) {
+    const isPersona = Array.isArray(item.roles) && item.roles.some((r) => String(r).toLowerCase() === 'persona')
+    const isFavorite = Boolean(item?.favorite)
+
+    // Mapping:
+    // character -> no effect
+    // character + favorite -> regular holo
+    // persona -> reverse holo
+    // persona + favorite -> cosmos holo
+    if (isPersona && isFavorite) return 'cosmos-holo'
+    if (isPersona) return 'reverse-holo'
+    if (isFavorite) return 'holo'
+    return null
+  }
+
+  function trimUrn(urn) {
+    if (!urn) return ''
+    const parts = urn.split(':')
+    return parts[parts.length - 1] || urn
+  }
+
+  function handleModalBackdrop(event) {
+    if (event.target === event.currentTarget) closeModal()
+  }
+
+  function handleGlobalKeydown(event) {
+    if (event.key === 'Escape' && selectedItem) closeModal()
+  }
+
+  onMount(() => { void loadGallery() })
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <section class="gallery-page">
-  <h2>Saved Gallery</h2>
-  <div class="filters">
-    <input placeholder="Search title, description, tags" bind:value={search} />
-    <input placeholder="Tag" bind:value={tag} />
-    <button onclick={loadGallery} disabled={loading}>{loading ? 'Loading…' : 'Apply'}</button>
+  <div class="gallery-topbar">
+    <h2>Saved Gallery</h2>
   </div>
+
+  <div class="filters">
+    <input class="filter-input" placeholder="Search title, description, tags" bind:value={search} />
+    <input class="filter-input filter-tag" placeholder="Tag" bind:value={tag} />
+    <label class="fav-check">
+      <input type="checkbox" bind:checked={favoritesOnly} />
+      ★ Favorites only
+    </label>
+    <button class="apply-btn" onclick={loadGallery} disabled={loading}>
+      {loading ? 'Loading…' : 'Apply'}
+    </button>
+  </div>
+
   {#if error}<p class="error">{error}</p>{/if}
 
   <div class="grid">
     {#each items as item}
-      <PokeHoloCard {item} onopen={openRun} />
+      <PokeHoloCard {item} onopen={openRun} variant={cardVariantFor(item)} />
     {/each}
+    {#if !loading && items.length === 0}
+      <p class="empty-note">No items found.</p>
+    {/if}
   </div>
-
-  {#if selected}
-    <div
-      class="modal"
-      role="button"
-      tabindex="0"
-      onclick={(event) => event.target === event.currentTarget && (selected = null)}
-      onkeydown={(event) => (event.key === 'Enter' || event.key === 'Escape') && (selected = null)}
-    >
-      <div class="modal-card">
-        <button class="close" onclick={() => (selected = null)}>✕</button>
-        <h3>{selected.preview?.title || selected.raw_idea}</h3>
-        {#if selected.state?.story_artifact}
-          <MarkdownBlock source={selected.state.story_artifact.opening || ''} />
-        {/if}
-        {#if selected.state?.characters?.length}
-          {#each selected.state.characters as character, index}
-            <div class="character-item">
-              <strong>{character.name || `Character ${index + 1}`}</strong>
-              <span class="role">{character.role || 'character'}</span>
-              <div class="role-actions">
-                <button onclick={() => setRole(selected.run_id, index, 'character')}>Character</button>
-                <button onclick={() => setRole(selected.run_id, index, 'persona')}>Persona</button>
-              </div>
-              <MarkdownBlock source={character.details || ''} />
-            </div>
-          {/each}
-        {/if}
-      </div>
-    </div>
-  {/if}
 </section>
 
+<!-- ── Modal ─────────────────────────────────────────────────── -->
+{#if selectedItem}
+  <div
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-label={`Character: ${selectedItem.avatar_name || selectedItem.title}`}
+    onclick={handleModalBackdrop}
+    onkeydown={(e) => e.key === 'Escape' && closeModal()}
+  >
+    <div class="flip-scene" class:flipped>
+      <div class="flip-card">
+
+        <!-- FRONT FACE -->
+        <div class="flip-face flip-front">
+          <div class="front-inner">
+            {#if selectedItem.avatar_data}
+              <button
+                class="front-img-btn"
+                onclick={() => (flipped = true)}
+                aria-label="Flip card to see details"
+              >
+                <img
+                  class="front-img"
+                  src={selectedItem.avatar_data}
+                  alt={selectedItem.avatar_name || selectedItem.title}
+                />
+              </button>
+            {:else}
+              <div
+                class="front-placeholder"
+                role="button"
+                tabindex="0"
+                onclick={() => (flipped = true)}
+                onkeydown={(e) => e.key === 'Enter' && (flipped = true)}
+              >
+                <span>{selectedItem.avatar_name || 'No Image'}</span>
+              </div>
+            {/if}
+
+            <div class="front-overlay-top">
+              <h2>{selectedItem.avatar_name || selectedItem.title}</h2>
+            </div>
+
+            {#if selectedItem.avatar_summary || selectedItem.description}
+              <div class="front-overlay-bottom">
+                <p>{selectedItem.avatar_summary || selectedItem.description}</p>
+              </div>
+            {/if}
+
+            <button
+              class="fav-btn front-fav"
+              onclick={(e) => { e.stopPropagation(); void toggleFavorite(selectedItem.run_id) }}
+              aria-label={selectedItem.favorite ? 'Remove from favorites' : 'Add to favorites'}
+            >{selectedItem.favorite ? '★' : '☆'}</button>
+
+            <button class="modal-close" onclick={closeModal} aria-label="Close">✕</button>
+
+            <button class="flip-hint" onclick={() => (flipped = true)} aria-label="Flip card">
+              Tap image to flip ↺
+            </button>
+          </div>
+        </div>
+
+        <!-- BACK FACE -->
+        <div class="flip-face flip-back">
+          <div class="back-inner">
+            {#if modalLoading}
+              <div class="modal-loading">
+                <div class="spinner"></div>
+                <p>Loading…</p>
+              </div>
+            {:else if selected && currentCharacter}
+              <div class="back-layout">
+                <!-- Left: avatar -->
+                <div class="back-avatar">
+                  <img
+                    src={currentCharacter.image_data || selectedItem.avatar_data || ''}
+                    alt={currentCharacter.name}
+                    class="back-avatar-img"
+                  />
+                </div>
+
+                <!-- Right: tabs -->
+                <div class="back-content">
+                  <!-- Top bar with navigation -->
+                  <div class="back-topbar">
+                    <button class="back-flip-btn" onclick={() => (flipped = false)}>← Front</button>
+                    {#if navHistory.length > 0}
+                      <button class="nav-btn" onclick={navBack}>← Back</button>
+                    {/if}
+                    {#if navForward.length > 0}
+                      <button class="nav-btn" onclick={navForwardFn}>Forward →</button>
+                    {/if}
+                    <button class="modal-close back-close" onclick={closeModal} aria-label="Close">✕</button>
+                  </div>
+
+                  <!-- Breadcrumb -->
+                  {#if navHistory.length > 0}
+                    <nav class="breadcrumb" aria-label="Navigation history">
+                      {#each navHistory as h}
+                        <span class="crumb">{h.character_name}</span>
+                        <span class="crumb-sep">›</span>
+                      {/each}
+                      <span class="crumb crumb-current">{currentCharacter.name}</span>
+                    </nav>
+                  {/if}
+
+                  <!-- Tab bar -->
+                  <div class="tab-bar" role="tablist">
+                    <button
+                      class="tab-btn"
+                      class:active={activeTab === 'bio'}
+                      role="tab"
+                      aria-selected={activeTab === 'bio'}
+                      onclick={() => (activeTab = 'bio')}
+                    >Bio</button>
+                    <button
+                      class="tab-btn"
+                      class:active={activeTab === 'relationships'}
+                      role="tab"
+                      aria-selected={activeTab === 'relationships'}
+                      onclick={() => (activeTab = 'relationships')}
+                    >Relationships</button>
+                  </div>
+
+                  <!-- Tab content -->
+                  <div class="tab-content" role="tabpanel">
+                    {#if activeTab === 'bio'}
+                      <div class="bio-tab">
+                        <div class="bio-header">
+                          <h3 class="bio-name">{currentCharacter.name}</h3>
+                          <div class="bio-badges">
+                            <!-- Role badge with dropdown -->
+                            <div class="role-dd-wrap">
+                              <button
+                                class="role-badge"
+                                onclick={(e) => { e.stopPropagation(); roleDdOpen = !roleDdOpen }}
+                                title="Click to change role"
+                              >{currentCharacter.role || 'character'} ▾</button>
+                              {#if roleDdOpen}
+                                <div class="role-dropdown">
+                                  {#each ['character', 'persona'].filter((r) => r !== (currentCharacter.role || 'character')) as r}
+                                    <button
+                                      class="role-dd-option"
+                                      onclick={() => void setRole(0, r)}
+                                    >{r}</button>
+                                  {/each}
+                                </div>
+                              {/if}
+                            </div>
+
+                            <!-- Tags -->
+                            {#if currentCharacter.tags?.length}
+                              {#each currentCharacter.tags as t}
+                                <span class="tag-pill">#{t}</span>
+                              {/each}
+                            {/if}
+
+                            <!-- Favorite -->
+                            <button
+                              class="fav-btn fav-sm"
+                              onclick={() => void toggleFavorite(selected.run_id)}
+                              aria-label={selectedItem.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                            >{selectedItem.favorite ? '★' : '☆'}</button>
+                          </div>
+                        </div>
+
+                        <div class="bio-details">
+                          <MarkdownBlock source={currentCharacter.details || ''} />
+                        </div>
+                      </div>
+
+                    {:else}
+                      <!-- Relationships tab -->
+                      <div class="rel-tab">
+                        <div class="rel-center">
+                          <div class="rel-node rel-current">{currentCharacter.name}</div>
+                        </div>
+
+                        {#if currentCharacter.relationships && Object.keys(currentCharacter.relationships).length > 0}
+                          <ul class="rel-list">
+                            {#each Object.entries(currentCharacter.relationships) as [targetUrn, relType]}
+                              <li class="rel-entry">
+                                <span class="rel-arrow">—</span>
+                                <span class="rel-type">{relType}</span>
+                                <span class="rel-arrow">→</span>
+                                <div class="rel-node">{trimUrn(targetUrn)}</div>
+                              </li>
+                            {/each}
+                          </ul>
+                          <p class="rel-note">Full graph navigation coming soon.</p>
+                        {:else}
+                          <p class="rel-empty">No relationships defined.</p>
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {:else if !modalLoading}
+              <div class="modal-empty">
+                <p>Could not load character data.</p>
+                <button class="back-flip-btn" onclick={() => (flipped = false)}>← Back to card</button>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .gallery-page { display: grid; gap: 0.65rem; margin-top: 1rem; }
-  .filters { display: flex; gap: 0.45rem; }
-  input { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.4rem 0.55rem; }
-  button { border: 1px solid #334155; background: #334155; color: #fff; border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer; }
-  .grid { display: grid; gap: 0.65rem; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-  .modal { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.72); display: grid; place-items: center; padding: 1rem; z-index: 55; }
-  .modal-card { width: min(860px, 100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 12px; border: 1px solid #cbd5e1; padding: 0.8rem; position: relative; }
-  .close { position: absolute; top: 0.4rem; right: 0.4rem; }
-  .character-item { border-top: 1px solid #e2e8f0; margin-top: 0.6rem; padding-top: 0.6rem; }
-  .role { margin-left: 0.35rem; border: 1px solid #0ea5e9; border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.75rem; color: #0369a1; }
-  .role-actions { display: inline-flex; gap: 0.3rem; margin-left: 0.5rem; }
+  /* ── Gallery layout ───────────────────────────────────────── */
+  .gallery-page { display: grid; gap: 0.8rem; margin-top: 1rem; }
+
+  .gallery-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .gallery-topbar h2 { margin: 0; }
+
+  /* ── Filters ──────────────────────────────────────────────── */
+  .filters { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+
+  .filter-input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.85rem;
+  }
+
+  .filter-tag { width: 8rem; }
+
+  .fav-check {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: #334155;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .apply-btn {
+    border: 1px solid #334155;
+    background: #334155;
+    color: #fff;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Regular grid ─────────────────────────────────────────── */
+  .grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .empty-note { color: #94a3b8; font-size: 0.85rem; }
   .error { color: #b91c1c; }
+
+  /* ── Modal overlay ────────────────────────────────────────── */
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.8);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    z-index: 55;
+  }
+
+  /* ── Flip scene ───────────────────────────────────────────── */
+  .flip-scene {
+    perspective: 1200px;
+    width: min(360px, 92vw);
+    transition: width 0.45s ease;
+  }
+
+  .flip-scene.flipped {
+    width: min(700px, 95vw);
+  }
+
+  .flip-card {
+    width: 100%;
+    height: min(520px, 82vh);
+    transform-style: preserve-3d;
+    transition: transform 0.55s ease;
+    position: relative;
+  }
+
+  .flip-scene.flipped .flip-card {
+    transform: rotateY(180deg);
+  }
+
+  .flip-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .flip-back {
+    transform: rotateY(180deg);
+    background: #fff;
+  }
+
+  /* ── Front face ───────────────────────────────────────────── */
+  .front-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #0f172a;
+  }
+
+  .front-img-btn {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .front-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .front-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 1rem;
+  }
+
+  .front-overlay-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem 1rem 2rem;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.65), transparent);
+    pointer-events: none;
+  }
+
+  .front-overlay-top h2 {
+    margin: 0;
+    color: rgba(255,255,255,0.92);
+    font-size: 1.2rem;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+
+  .front-overlay-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 2rem 1rem 1rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.65), transparent);
+    pointer-events: none;
+  }
+
+  .front-overlay-bottom p {
+    margin: 0;
+    color: rgba(255,255,255,0.82);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  .flip-hint {
+    position: absolute;
+    bottom: 0.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    white-space: nowrap;
+    pointer-events: auto;
+    padding: 0.2rem 0.5rem;
+    border: none;
+    background: none;
+    z-index: 4;
+  }
+
+  .fav-btn {
+    position: absolute;
+    border: none;
+    background: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    z-index: 5;
+  }
+
+  .front-fav {
+    top: 0.55rem;
+    right: 2.4rem;
+    color: #fbbf24;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    border: none;
+    background: rgba(0,0,0,0.45);
+    color: #fff;
+    border-radius: 999px;
+    width: 1.8rem;
+    height: 1.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  /* ── Back face ────────────────────────────────────────────── */
+  .back-inner {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .back-layout {
+    display: flex;
+    height: 100%;
+  }
+
+  .back-avatar {
+    flex: 0 0 33.3%;
+    overflow: hidden;
+    background: #0f172a;
+  }
+
+  .back-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .back-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .back-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.45rem 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    position: relative;
+  }
+
+  .back-flip-btn, .nav-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .back-close {
+    position: static;
+    margin-left: auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    background: #f1f5f9;
+    color: #475569;
+    border-radius: 999px;
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    color: #64748b;
+    background: #f1f5f9;
+    flex-wrap: wrap;
+  }
+
+  .crumb { cursor: pointer; color: #3b82f6; text-decoration: underline; }
+  .crumb-current { color: #0f172a; cursor: default; text-decoration: none; font-weight: 600; }
+  .crumb-sep { color: #94a3b8; }
+
+  /* ── Tabs ─────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    flex-shrink: 0;
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 0.45rem 0.5rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font-size: 0.82rem;
+    color: #64748b;
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .tab-btn.active {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+    background: #fff;
+  }
+
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0.65rem;
+  }
+
+  /* ── Bio tab ──────────────────────────────────────────────── */
+  .bio-header {
+    margin-bottom: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .bio-name {
+    margin: 0;
+    font-size: 1rem;
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  .bio-badges {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .role-dd-wrap { position: relative; }
+
+  .role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    background: #1e40af;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: capitalize;
+  }
+
+  .role-dropdown {
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 0;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    z-index: 20;
+    overflow: hidden;
+    min-width: 8rem;
+  }
+
+  .role-dd-option {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.7rem;
+    text-align: left;
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-transform: capitalize;
+  }
+
+  .role-dd-option:hover { background: #f1f5f9; }
+
+  .tag-pill {
+    display: inline-block;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.68rem;
+    background: #eff6ff;
+  }
+
+  .fav-sm {
+    position: static;
+    font-size: 1rem;
+    color: #fbbf24;
+    text-shadow: none;
+    padding: 0;
+    line-height: 1;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+
+  .bio-details {
+    font-size: 0.82rem;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 0.4rem;
+  }
+
+  /* ── Relationships tab ────────────────────────────────────── */
+  .rel-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .rel-center {
+    display: flex;
+    justify-content: center;
+    padding: 0.4rem 0;
+  }
+
+  .rel-node {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #f8fafc;
+    color: #334155;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  .rel-current {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1e40af;
+  }
+
+  .rel-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .rel-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .rel-arrow { color: #94a3b8; font-size: 0.85rem; }
+
+  .rel-type {
+    font-size: 0.72rem;
+    color: #7c3aed;
+    font-weight: 600;
+    background: #f5f3ff;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid #ddd6fe;
+  }
+
+  .rel-note, .rel-empty {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-style: italic;
+    margin: 0;
+  }
+
+  /* ── Loading state ────────────────────────────────────────── */
+  .modal-loading, .modal-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: #64748b;
+    font-size: 0.9rem;
+  }
+
+  .spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid #e2e8f0;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

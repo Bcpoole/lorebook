@@ -25,6 +25,7 @@
     onrandomname = () => {},
     onrunmodule = async () => {},
     oncharacterimage = async () => {},
+    onspawnrelated = async () => {},
     onapprovereview = () => {},
     onrejectreview = () => {},
     oneditreview = () => {},
@@ -75,6 +76,7 @@
   let imageGeneratingIndex = $state(null)
   let imagePromptDrafts = $state({})
   let editingReview = $state(false)
+  let spawnRelationship = $state('')
 
   function updateWorkflow(nextState) {
     workflowState = nextState
@@ -303,6 +305,12 @@
     reviewState
     editingReview = false
   })
+
+  async function handleSpawnRelated() {
+    if (running || !llmConnected || characters.length === 0 || !spawnRelationship.trim()) return
+    await onspawnrelated({ relationship: spawnRelationship.trim(), sourceCharacterIndex: selectedCharacterIndex })
+    spawnRelationship = ''
+  }
 </script>
 
 <div class="agents">
@@ -316,7 +324,7 @@
           class:done={savedRun && key === 'save_assets'}
           onclick={() => (activeAgent = key)}
         >
-          <span class="step-index">{index + 1}</span>
+          {#if visibleEntries.length > 1}<span class="step-index">{index + 1}</span>{/if}
           <span class="step-label">{label}</span>
           {#if key === 'save_assets' && pendingSave !== null && !savedRun}
             <span class="ready-dot" aria-label="Save ready" title="Save Assets is ready">●</span>
@@ -401,6 +409,23 @@
         <button class="module-btn" onclick={() => runModulePrompt('character_designer')} disabled={running || characters.length === 0 || !llmConnected}>
           Send To Character Designer
         </button>
+      </div>
+
+      <div class="spawn-section">
+        <label class="spawn-label" for="spawn-relationship">Spawn Related Character</label>
+        <div class="spawn-row">
+          <input
+            id="spawn-relationship"
+            class="spawn-input"
+            bind:value={spawnRelationship}
+            placeholder="Relationship (e.g. mother, rival, mentor)"
+          />
+          <button
+            class="module-btn spawn-btn"
+            onclick={handleSpawnRelated}
+            disabled={running || !llmConnected || characters.length === 0 || !spawnRelationship.trim()}
+          >Spawn Related</button>
+        </div>
       </div>
 
       <div class="character-toolbar">
@@ -1005,6 +1030,43 @@
     border: 1px dashed #cbd5e1;
     border-radius: 10px;
     background: #ffffff;
+  }
+
+  .spawn-section {
+    display: grid;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px dashed #a5b4fc;
+    border-radius: 10px;
+    background: #fafaff;
+  }
+
+  .spawn-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #4338ca;
+  }
+
+  .spawn-row {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+  }
+
+  .spawn-input {
+    flex: 1;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.85rem;
+  }
+
+  .spawn-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    border-color: #4338ca;
+    background: linear-gradient(180deg, #6366f1 0%, #4338ca 100%);
   }
 
   .module-runner label {

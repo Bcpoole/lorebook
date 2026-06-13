@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 
 _PLACEHOLDER_NAME_PATTERN = re.compile(r"^companion(?:\s+\d+)?$", re.IGNORECASE)
+_GENERIC_HEADER_PATTERN = re.compile(
+    r"^(character\s+card\s+profile|character\s+card|character\s+profile|character\s+\d+)$",
+    re.IGNORECASE,
+)
 _NAME_FIELD_PATTERN = re.compile(
     r"^(?:\*\*|__)?name(?:\*\*|__)?:?\s*(.+?)\s*$",
     re.IGNORECASE,
@@ -32,7 +36,11 @@ def infer_character_name(details: str, fallback: str = "") -> str:
 
 def should_replace_character_name(current_name: str) -> bool:
     stripped = current_name.strip()
-    return not stripped or bool(_PLACEHOLDER_NAME_PATTERN.match(stripped))
+    return (
+        not stripped
+        or bool(_PLACEHOLDER_NAME_PATTERN.match(stripped))
+        or bool(_GENERIC_HEADER_PATTERN.match(stripped))
+    )
 
 
 def _clean_name(value: str, fallback: str) -> str:

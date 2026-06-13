@@ -22,6 +22,7 @@ from lorebook.api.storage import (
     load_run,
     save_draft_state,
     save_run_result,
+    toggle_favorite,
     update_character_role,
 )
 from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_llm
@@ -50,9 +51,14 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
     for index, entry in enumerate(value, start=1):
         if not isinstance(entry, dict):
             continue
+        raw_name = str(entry.get("name") or "")
+        details = str(entry.get("details") or "")
+        # Re-infer from details when the stored name is a known placeholder/generic header
+        if should_replace_character_name(raw_name):
+            raw_name = infer_character_name(details, fallback=f"Companion {index}")
         normalized_entry: CharacterState = {
-            "name": str(entry.get("name") or f"Companion {index}"),
-            "details": str(entry.get("details") or ""),
+            "name": raw_name or f"Companion {index}",
+            "details": details,
         }
         role_value = str(entry.get("role") or "").strip().lower()
         if role_value in {"character", "persona"}:
@@ -64,10 +70,15 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
             if cleaned_tags:
                 normalized_entry["tags"] = cleaned_tags
 
-        for optional_key in ("image_path", "image_prompt", "image_data"):
+        for optional_key in ("image_path", "image_prompt", "image_data", "summary", "id"):
             optional_value = entry.get(optional_key)
             if isinstance(optional_value, str) and optional_value:
                 normalized_entry[optional_key] = optional_value
+        # relationships is a dict { urn -> relationship_label }
+        rel_value = entry.get("relationships")
+        if isinstance(rel_value, dict):
+            normalized_entry["relationships"] = rel_value
+
         normalized.append(normalized_entry)
     return normalized
 
@@ -789,16 +800,26 @@ async def get_run_by_id(run_id: str) -> Dict[str, Any]:
 async def list_gallery_runs(
     search: str = "",
     tag: str = "",
+    favorites_only: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
-    listing = list_run_previews(search=search, tag=tag, limit=limit, offset=offset)
+    listing = list_run_previews(search=search, tag=tag, favorites_only=favorites_only, limit=limit, offset=offset)
     return {
         "items": listing["items"],
         "total": listing["total"],
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.post("/gallery/{run_id}/favorite")
+async def toggle_run_favorite(run_id: str) -> Dict[str, Any]:
+    """Toggle the favorite flag on a gallery run."""
+    record = toggle_favorite(run_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    return {"ok": True, "run_id": run_id, "favorite": bool(record.get("favorite", False))}
 
 
 @router.post("/story")
@@ -862,6 +883,74 @@ async def set_character_role(body: Dict[str, Any]) -> Dict[str, Any]:
     if not updated:
         raise HTTPException(status_code=404, detail="run or character not found")
     return {"ok": True, "run": updated}
+
+
+@router.post("/character-related")
+async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a new character related to an existing one via a described relationship."""
+    raw_idea: str = str(body.get("raw_idea") or "").strip()
+    persona_id: str = str(body.get("persona_id", "blank"))
+    experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
+    max_length = int(experimentation_config.get("maxLength", 700))
+    relationship: str = str(body.get("relationship") or "").strip()
+    source_character_index: int = max(0, int(body.get("source_character_index", 0)))
+
+    state = _normalize_state(raw_idea, body.get("state"))
+    source_characters = state.get("characters", [])
+
+    if source_character_index >= len(source_characters):
+        raise HTTPException(status_code=400, detail="source_character_index is out of range")
+
+    source_char = source_characters[source_character_index]
+    source_name = str(source_char.get("name") or "the existing character")
+    source_details = str(source_char.get("details") or "")
+
+    if not relationship:
+        raise HTTPException(status_code=400, detail="relationship description is required")
+
+    prompts = get_persona_prompts(persona_id)
+    related_system = getattr(prompts, "CHARACTER_RELATED_SYSTEM", prompts.CHARACTER_SYSTEM)
+
+    prompt_parts = []
+    if state.get("world_setting"):
+        prompt_parts.append(f"World setting:\n{state['world_setting']}")
+    prompt_parts.append(f"Existing character ({source_name}):\n{source_details}")
+    prompt_parts.append(f"Relationship to create: {relationship}")
+    if raw_idea:
+        prompt_parts.append(f"Original concept: {raw_idea}")
+    prompt = "\n\n".join(prompt_parts)
+
+    generated = call_local_llm(related_system, prompt, max_length=max_length)
+    name = infer_character_name(generated, fallback="Companion")
+    source_id = str(source_char.get("id") or "")
+    new_character: Dict[str, Any] = {
+        "name": name,
+        "details": generated.strip(),
+        "role": "character",
+        "tags": [],
+    }
+    if source_id:
+        new_character["relationships"] = {source_id: relationship}
+
+    # Append to state's characters list
+    new_characters = list(state.get("characters", []))
+    new_characters.append(new_character)
+    state["characters"] = new_characters
+
+    # Update source character's relationships to point back
+    if source_id and source_characters:
+        updated_source = dict(source_characters[source_character_index])
+        rels = dict(updated_source.get("relationships") or {})
+        # We don't have the new character's id yet (it will be assigned at save time)
+        updated_source["relationships"] = rels
+        new_characters[source_character_index] = updated_source
+        state["characters"] = new_characters
+
+    save_draft_state(
+        {"raw_idea": raw_idea, "state": state, "meta": {"mode": "character"}, "save_pending": True},
+        "latest",
+    )
+    return {"state": state, "character": new_character}
 
 
 @router.post("/draft")

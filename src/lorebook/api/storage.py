@@ -8,6 +8,15 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from lorebook.characters import infer_character_name, should_replace_character_name
+
+# Fields that are volatile / large and must never be written to disk for characters
+_CHAR_STRIP_KEYS = frozenset({"image_prompt", "image_prompt_styled", "image_style", "image_data"})
+# Rename image_path → image_file on disk
+_CHAR_RENAME_KEYS = {"image_path": "image_file"}
+# State-level keys to strip before saving to disk
+_STATE_STRIP_KEYS = frozenset({"critique_notes", "passed_inspection", "_lastNode"})
+
 
 def get_outputs_root() -> Path:
     return Path(__file__).resolve().parents[3] / "outputs"
@@ -47,6 +56,40 @@ def _trim_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]).strip()
 
 
+def _make_character_urn() -> str:
+    return f"urn:lorebook:character:{uuid4().hex}"
+
+
+def _make_run_urn() -> str:
+    return f"urn:lorebook:run:{uuid4().hex}"
+
+
+def _clean_character_for_disk(char: dict[str, Any]) -> dict[str, Any]:
+    """Strip volatile fields and rename image_path → image_file for disk storage."""
+    out: dict[str, Any] = {}
+    for key, value in char.items():
+        if key in _CHAR_STRIP_KEYS:
+            continue
+        disk_key = _CHAR_RENAME_KEYS.get(key, key)
+        out[disk_key] = value
+    # Ensure every saved character has a URN id
+    if not out.get("id"):
+        out["id"] = _make_character_urn()
+    return out
+
+
+def _clean_state_for_disk(state: dict[str, Any]) -> dict[str, Any]:
+    """Strip ephemeral state fields before writing to disk."""
+    out = {k: v for k, v in state.items() if k not in _STATE_STRIP_KEYS}
+    raw_chars = out.get("characters")
+    if isinstance(raw_chars, list):
+        out["characters"] = [
+            _clean_character_for_disk(c) if isinstance(c, dict) else c
+            for c in raw_chars
+        ]
+    return out
+
+
 def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
     state = record.get("state") if isinstance(record.get("state"), dict) else {}
     story = state.get("story_artifact") if isinstance(state.get("story_artifact"), dict) else {}
@@ -58,14 +101,21 @@ def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
 
     story_tags = _normalize_tags(story.get("tags"))
     character_tags: list[str] = []
+    # Use the first character with image data as the card avatar
     avatar_data = ""
     avatar_name = ""
+    avatar_summary = ""
     for character in characters:
         if not isinstance(character, dict):
             continue
         if not avatar_data:
+            # image_data is present in live state; image_file is on disk path
             avatar_data = str(character.get("image_data") or "")
-            avatar_name = str(character.get("name") or "")
+            raw_name = str(character.get("name") or "")
+            if should_replace_character_name(raw_name):
+                raw_name = infer_character_name(str(character.get("details") or ""), fallback="")
+            avatar_name = raw_name
+            avatar_summary = str(character.get("summary") or "")
         character_tags.extend(_normalize_tags(character.get("tags")))
     tags = list(dict.fromkeys([*story_tags, *character_tags]))
     roles = [
@@ -82,9 +132,10 @@ def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "tags": tags,
         "avatar_data": avatar_data,
         "avatar_name": avatar_name,
+        "avatar_summary": avatar_summary,
         "character_count": len([c for c in characters if isinstance(c, dict)]),
         "roles": roles,
-        "story_present": bool(story),
+        "favorite": bool(record.get("favorite", False)),
     }
 
 
@@ -94,12 +145,25 @@ def save_run_result(payload: dict[str, Any], filename: str | None = None) -> dic
         file_stem = safe if safe else uuid4().hex
     else:
         file_stem = uuid4().hex
+
+    # Carry forward any existing favorite flag
+    existing_favorite = bool(payload.get("favorite", False))
+
     started_at = datetime.now(timezone.utc).isoformat()
-    record = {
+    # Clean state before writing to disk
+    clean_state = _clean_state_for_disk(payload.get("state") or {})
+    meta = payload.get("meta") or {}
+    # Only keep meta.source
+    meta_disk = {k: v for k, v in meta.items() if k == "source"}
+
+    record: dict[str, Any] = {
         "run_id": file_stem,
         "saved_at": started_at,
         "saved_at_ns": time.time_ns(),
-        **payload,
+        "raw_idea": payload.get("raw_idea", ""),
+        "state": clean_state,
+        "meta": meta_disk,
+        "favorite": existing_favorite,
     }
     record["preview"] = _preview_from_record(record)
 
@@ -168,7 +232,13 @@ def delete_draft_state(draft_id: str = "latest") -> bool:
     return True
 
 
-def list_run_previews(search: str = "", tag: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+def list_run_previews(
+    search: str = "",
+    tag: str = "",
+    favorites_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
     normalized_search = search.strip().lower()
     normalized_tag = tag.strip().lower()
     entries: list[dict[str, Any]] = []
@@ -178,6 +248,10 @@ def list_run_previews(search: str = "", tag: str = "", limit: int = 50, offset: 
             continue
         record = json.loads(run_path.read_text(encoding="utf-8"))
         preview = record.get("preview") if isinstance(record.get("preview"), dict) else _preview_from_record(record)
+        # Merge run-level favorite into preview (in case preview was built before favorite was set)
+        preview["favorite"] = bool(record.get("favorite", preview.get("favorite", False)))
+        if favorites_only and not preview.get("favorite"):
+            continue
         searchable = " ".join(
             [
                 str(preview.get("title", "")),
@@ -222,5 +296,19 @@ def update_character_role(run_id: str, character_index: int, role: str) -> dict[
     state["characters"] = characters
     record["state"] = state
     record["preview"] = _preview_from_record(record)
+    run_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
+
+
+def toggle_favorite(run_id: str) -> dict[str, Any] | None:
+    """Toggle the favorite flag on a run and return the updated record."""
+    run_path = get_runs_dir() / f"{run_id}.json"
+    if not run_path.exists():
+        return None
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    record["favorite"] = not bool(record.get("favorite", False))
+    record["preview"] = _preview_from_record(record)
+    # Sync favorite into preview so it persists
+    record["preview"]["favorite"] = record["favorite"]
     run_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     return record

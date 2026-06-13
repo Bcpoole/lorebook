@@ -128,6 +128,38 @@
     markPendingSave()
   }
 
+  async function handleSpawnRelated({ relationship, sourceCharacterIndex }) {
+    if (!rawIdea.trim() || loading || !llmConnected) return
+    loading = true
+    error = ''
+    try {
+      const res = await fetch('/api/character-related', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_idea: rawIdea,
+          state: workflowState,
+          source_character_index: sourceCharacterIndex,
+          relationship,
+          persona_id: personaId,
+        }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        error = payload?.detail || 'Failed to spawn related character.'
+        return
+      }
+      const payload = await res.json()
+      workflowState = payload.state
+      markPendingSave()
+    } catch (fetchError) {
+      if (isAbortError(fetchError)) return
+      error = 'Failed to spawn related character.'
+    } finally {
+      loading = false
+    }
+  }
+
   async function saveCharacter() {
     if (!pendingSave) return
     const res = await fetch('/api/save', {
@@ -174,6 +206,7 @@
     visibleAgentKeys={['character_designer']}
     onrunmodule={handleModuleRun}
     oncharacterimage={handleCharacterImageGenerate}
+    onspawnrelated={handleSpawnRelated}
   />
 </section>
 
