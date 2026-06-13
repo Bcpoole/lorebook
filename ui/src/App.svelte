@@ -20,6 +20,7 @@
   let activeTab = $state('world')
   let activeAgentTab = $state('loremaster')
   let graphPanelLoad = $state(null)
+  let graphModalOpen = $state(false)
   let currentRawIdea = $state('')
   let nextStage = $state(null)
 
@@ -735,17 +736,19 @@
     }
   }
 
-  function openGraphTab() {
+  function openGraphModal() {
     if (!graphPanelLoad) {
       graphPanelLoad = import('./lib/GraphPanel.svelte')
     }
+    graphModalOpen = true
+  }
+
+  function closeGraphModal() {
+    graphModalOpen = false
   }
 
   function selectTopTab(tabId) {
     activeTab = tabId
-    if (tabId === 'graph') {
-      openGraphTab()
-    }
   }
 
   function clearActiveHandles() {
@@ -1584,6 +1587,47 @@
   </div>
 {/if}
 
+{#if graphModalOpen}
+  <div
+    class="graph-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Workflow graph"
+    tabindex="-1"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) {
+        closeGraphModal()
+      }
+    }}
+    onkeydown={(event) => {
+      if (event.key === 'Escape') {
+        closeGraphModal()
+      }
+    }}
+  >
+    <div class="graph-modal-card">
+      <div class="graph-modal-header">
+        <h3>Workflow Graph</h3>
+        <button class="graph-modal-close" aria-label="Close workflow graph" onclick={closeGraphModal}>✕</button>
+      </div>
+      <div class="graph-modal-body">
+        {#if graphPanelLoad}
+          {#await graphPanelLoad}
+            <p class="loading">Loading graph…</p>
+          {:then module}
+            {@const GraphPanel = module.default}
+            <GraphPanel />
+          {:catch error}
+            <p class="error">Failed to load graph: {error.message}</p>
+          {/await}
+        {:else}
+          <p class="loading">Loading graph…</p>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
 <Toast bind:visible={toastVisible} message={toastMessage} />
 
 <div class="app-container">
@@ -1599,6 +1643,7 @@
     onCancel={cancelExperimentation}
     onSaveSd={saveExperimentation}
     onCancelSd={cancelExperimentation}
+    onOpenGraph={openGraphModal}
   />
 
   <div class="workspace-area">
@@ -1667,22 +1712,6 @@
       />
     {:else if activeTab === 'gallery'}
       <GalleryPage />
-    {:else if activeTab === 'graph'}
-      <div class="graph-section">
-        <button class="back-btn" onclick={() => (activeTab = 'world')}>← Back</button>
-        {#if graphPanelLoad}
-          {#await graphPanelLoad}
-            <p class="loading">Loading graph…</p>
-          {:then module}
-            {@const GraphPanel = module.default}
-            <GraphPanel />
-          {:catch error}
-            <p class="error">Failed to load graph: {error.message}</p>
-          {/await}
-        {:else}
-          <p class="loading">Loading graph…</p>
-        {/if}
-      </div>
     {/if}
     </main>
 
@@ -1844,29 +1873,6 @@
     font-style: italic;
   }
 
-  .graph-section {
-    margin-top: 1rem;
-  }
-
-  .back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.35rem 0.9rem;
-    margin-bottom: 0.75rem;
-    background: transparent;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    color: #475569;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .back-btn:hover {
-    border-color: #94a3b8;
-    color: #1e293b;
-  }
-
   .loading,
   .error {
     color: #64748b;
@@ -1999,6 +2005,65 @@
     place-items: center;
     z-index: 50;
     padding: 1rem;
+  }
+
+  .graph-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.72);
+    display: grid;
+    place-items: center;
+    z-index: 55;
+    padding: 1rem;
+  }
+
+  .graph-modal-card {
+    width: min(1100px, 100%);
+    max-height: min(90vh, 900px);
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .graph-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+
+  .graph-modal-header h3 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1rem;
+  }
+
+  .graph-modal-close {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #475569;
+    border-radius: 8px;
+    width: 2rem;
+    height: 2rem;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .graph-modal-close:hover {
+    border-color: #94a3b8;
+    color: #1e293b;
+  }
+
+  .graph-modal-body {
+    padding: 1rem;
+    overflow: auto;
   }
 
   .image-compare-card {
