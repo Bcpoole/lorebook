@@ -10,7 +10,6 @@
     { id: 'story', label: '📕 Story' },
     { id: 'character', label: '🎭 Character' },
     { id: 'gallery', label: '🏛️ Gallery' },
-    { id: 'graph', label: 'Graph' },
   ]
 </script>
 
