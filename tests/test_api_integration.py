@@ -299,6 +299,65 @@ def test_character_endpoint_returns_single_character(monkeypatch) -> None:
     payload = res.json()
     assert payload["character"]["details"].startswith("Character:")
     assert payload["character"]["role"] == "character"
+    assert payload["character"]["id"].startswith("urn:lorebook:character:")
+    assert payload["character"]["relationships"] == {}
+
+
+def test_character_related_creates_bidirectional_relationships_and_persists_on_save(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: "Character: Rowan\nA loyal quartermaster who keeps every ledger in order.",
+    )
+
+    client = TestClient(create_app())
+    related_res = client.post(
+        "/api/character-related",
+        json={
+            "raw_idea": "naval world",
+            "state": {
+                "raw_idea": "naval world",
+                "world_setting": "An island fleet city.",
+                "characters": [{"name": "Mira", "details": "Captain of the flagship.", "role": "character"}],
+                "critique_notes": "",
+                "passed_inspection": False,
+            },
+            "source_character_index": 0,
+            "relationship": "trusted employee of the house guard commander",
+        },
+    )
+    assert related_res.status_code == 200
+    related_payload = related_res.json()
+    chars = related_payload["state"]["characters"]
+    assert len(chars) == 2
+
+    source = chars[0]
+    related = chars[1]
+    source_id = source["id"]
+    related_id = related["id"]
+    expected_label = "trusted employee of the house guard commander"
+
+    assert source_id.startswith("urn:lorebook:character:")
+    assert related_id.startswith("urn:lorebook:character:")
+    assert related["relationships"] == {source_id: expected_label}
+    assert source["relationships"][related_id] == expected_label
+
+    save_res = client.post(
+        "/api/save",
+        json={
+            "raw_idea": "naval world",
+            "state": {"world_setting": "An island fleet city.", "characters": [source]},
+            "meta": {"source": "character-page"},
+        },
+    )
+    assert save_res.status_code == 200
+    saved = storage.load_run(save_res.json()["run_id"])
+    assert saved is not None
+    saved_char = saved["state"]["characters"][0]
+    assert saved_char["id"] == source_id
+    assert saved_char["relationships"][related_id] == expected_label
 
 
 def test_gallery_endpoint_lists_saved_runs_and_role_toggle() -> None:
@@ -323,3 +382,33 @@ def test_gallery_endpoint_lists_saved_runs_and_role_toggle() -> None:
     )
     assert role_res.status_code == 200
     assert role_res.json()["run"]["state"]["characters"][0]["role"] == "persona"
+
+
+def test_character_lookup_by_urn_resolves_name_and_relationships() -> None:
+    source_id = "urn:lorebook:character:source123"
+    related_id = "urn:lorebook:character:related456"
+    storage.save_run_result(
+        {
+            "raw_idea": "idea",
+            "state": {
+                "characters": [
+                    {
+                        "id": source_id,
+                        "name": "Kael Draven, \"The Cotton Candy Commander\"",
+                        "details": "A field marshal with a playful facade.",
+                        "relationships": {related_id: "trusted employee of the command"},
+                    }
+                ]
+            },
+            "meta": {},
+        },
+        filename="lookup_case",
+    )
+
+    client = TestClient(create_app())
+    res = client.get("/api/characters/by-id", params={"urn": source_id})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["character"]["id"] == source_id
+    assert payload["character"]["name"] == "Kael Draven, \"The Cotton Candy Commander\""
+    assert payload["character"]["relationships"][related_id] == "trusted employee of the command"

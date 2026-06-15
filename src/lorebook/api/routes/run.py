@@ -17,6 +17,7 @@ from lorebook.config.prompts import get_persona_prompts
 from lorebook.config.sd import DEFAULT_SD_STYLE, SD_STYLES
 from lorebook.api.storage import (
     delete_draft_state,
+    find_character_by_urn,
     list_run_previews,
     load_draft_state,
     load_run,
@@ -43,6 +44,31 @@ CHARACTER_MAX_TOKENS = _tokens("LOREBOOK_CHARACTER_MAX_TOKENS", 2048)
 EDITOR_MAX_TOKENS = _tokens("LOREBOOK_EDITOR_MAX_TOKENS", 512)
 
 
+def _make_character_urn() -> str:
+    return f"urn:lorebook:character:{uuid4().hex}"
+
+
+def _trim_words(text: str, max_words: int) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text.strip()
+    return " ".join(words[:max_words]).strip()
+
+
+def _coerce_relationships(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    cleaned: dict[str, str] = {}
+    for raw_key, raw_label in value.items():
+        key = str(raw_key).strip()
+        label = _trim_words(str(raw_label).strip(), 7)
+        if not key or not label:
+            continue
+        cleaned[key] = label
+    return cleaned
+
+
 def _coerce_characters(value: Any) -> list[CharacterState]:
     if not isinstance(value, list):
         return []
@@ -57,8 +83,10 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
         if should_replace_character_name(raw_name):
             raw_name = infer_character_name(details, fallback=f"Companion {index}")
         normalized_entry: CharacterState = {
+            "id": str(entry.get("id") or "").strip() or _make_character_urn(),
             "name": raw_name or f"Companion {index}",
             "details": details,
+            "relationships": _coerce_relationships(entry.get("relationships")),
         }
         role_value = str(entry.get("role") or "").strip().lower()
         if role_value in {"character", "persona"}:
@@ -70,14 +98,10 @@ def _coerce_characters(value: Any) -> list[CharacterState]:
             if cleaned_tags:
                 normalized_entry["tags"] = cleaned_tags
 
-        for optional_key in ("image_path", "image_prompt", "image_data", "summary", "id"):
+        for optional_key in ("image_path", "image_prompt", "image_data", "summary"):
             optional_value = entry.get(optional_key)
             if isinstance(optional_value, str) and optional_value:
                 normalized_entry[optional_key] = optional_value
-        # relationships is a dict { urn -> relationship_label }
-        rel_value = entry.get("relationships")
-        if isinstance(rel_value, dict):
-            normalized_entry["relationships"] = rel_value
 
         normalized.append(normalized_entry)
     return normalized
@@ -313,9 +337,12 @@ def _next_stage_from_editor(state: WizardState) -> str:
 def _upsert_character(state: WizardState, index: int, details: str) -> list[CharacterState]:
     characters = [dict(character) for character in state.get("characters", [])]
     while len(characters) <= index:
-        characters.append({"name": "", "details": ""})
+        characters.append({"id": _make_character_urn(), "name": "", "details": "", "relationships": {}})
 
     base = characters[index]
+    if not str(base.get("id") or "").strip():
+        base["id"] = _make_character_urn()
+    base["relationships"] = _coerce_relationships(base.get("relationships"))
     base["details"] = details
     inferred_name = infer_character_name(details, fallback=base.get("name", ""))
     if should_replace_character_name(base.get("name", "")):
@@ -386,7 +413,14 @@ def _generate_character_only(raw_idea: str, persona_id: str, max_length: int = 7
     prompts = get_persona_prompts(persona_id)
     generated = call_local_llm(prompts.CHARACTER_SYSTEM, raw_idea, max_length=max_length)
     name = infer_character_name(generated, fallback="Companion")
-    return {"name": name, "details": generated.strip(), "role": "character", "tags": []}
+    return {
+        "id": _make_character_urn(),
+        "name": name,
+        "details": generated.strip(),
+        "role": "character",
+        "tags": [],
+        "relationships": {},
+    }
 
 
 def _run_stage_sync(
@@ -796,6 +830,14 @@ async def get_run_by_id(run_id: str) -> Dict[str, Any]:
     return record
 
 
+@router.get("/characters/by-id")
+async def get_character_by_id(urn: str = Query(..., min_length=1)) -> Dict[str, Any]:
+    resolved = find_character_by_urn(urn)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"character {urn} not found")
+    return resolved
+
+
 @router.get("/gallery")
 async def list_gallery_runs(
     search: str = "",
@@ -905,7 +947,8 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
     source_name = str(source_char.get("name") or "the existing character")
     source_details = str(source_char.get("details") or "")
 
-    if not relationship:
+    relationship_label = _trim_words(relationship, 7)
+    if not relationship_label:
         raise HTTPException(status_code=400, detail="relationship description is required")
 
     prompts = get_persona_prompts(persona_id)
@@ -922,29 +965,30 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
 
     generated = call_local_llm(related_system, prompt, max_length=max_length)
     name = infer_character_name(generated, fallback="Companion")
-    source_id = str(source_char.get("id") or "")
+    new_characters = list(state.get("characters", []))
+    updated_source = dict(new_characters[source_character_index])
+    source_id = str(updated_source.get("id") or "").strip()
+    if not source_id:
+        source_id = _make_character_urn()
+        updated_source["id"] = source_id
+
+    source_relationships = _coerce_relationships(updated_source.get("relationships"))
+    new_id = _make_character_urn()
     new_character: Dict[str, Any] = {
+        "id": new_id,
         "name": name,
         "details": generated.strip(),
         "role": "character",
         "tags": [],
+        "relationships": {source_id: relationship_label},
     }
-    if source_id:
-        new_character["relationships"] = {source_id: relationship}
 
-    # Append to state's characters list
-    new_characters = list(state.get("characters", []))
+    source_relationships[new_id] = relationship_label
+    updated_source["relationships"] = source_relationships
+
+    new_characters[source_character_index] = updated_source
     new_characters.append(new_character)
     state["characters"] = new_characters
-
-    # Update source character's relationships to point back
-    if source_id and source_characters:
-        updated_source = dict(source_characters[source_character_index])
-        rels = dict(updated_source.get("relationships") or {})
-        # We don't have the new character's id yet (it will be assigned at save time)
-        updated_source["relationships"] = rels
-        new_characters[source_character_index] = updated_source
-        state["characters"] = new_characters
 
     save_draft_state(
         {"raw_idea": raw_idea, "state": state, "meta": {"mode": "character"}, "save_pending": True},

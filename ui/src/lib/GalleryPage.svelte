@@ -14,17 +14,51 @@
   // Modal
   let selectedItem = $state(null) // gallery item (immediate, from local list)
   let selected = $state(null) // full run object (loaded from API)
+  let selectedCharacterId = $state('')
   let modalLoading = $state(false)
   let flipped = $state(false)
   let activeTab = $state('bio')
   let roleDdOpen = $state(false)
+  let relationshipNodeCache = $state({})
+  let relationshipLookupPending = $state({})
 
   // Navigation history (for relationship traversal)
-  let navHistory = $state([]) // [{run_id, character_name}]
-  let navForward = $state([]) // [{run_id, character_name}]
+  let navHistory = $state([]) // [{run_id, character_id, character_name}]
+  let navForward = $state([]) // [{run_id, character_id, character_name}]
 
-  // Derived: first character in the selected run
-  let currentCharacter = $derived(selected?.state?.characters?.[0] ?? null)
+  const MAX_NAV_DEPTH = 20
+
+  let runCharacters = $derived(selected?.state?.characters ?? [])
+  let currentCharacter = $derived.by(() => {
+    if (!Array.isArray(runCharacters) || runCharacters.length === 0) return null
+    if (!selectedCharacterId) return runCharacters[0] ?? null
+    return runCharacters.find((character) => character?.id === selectedCharacterId) ?? runCharacters[0] ?? null
+  })
+  let currentCharacterIndex = $derived.by(() => {
+    if (!currentCharacter || !Array.isArray(runCharacters)) return 0
+    const idx = runCharacters.findIndex((character) => character?.id === currentCharacter?.id)
+    return idx >= 0 ? idx : 0
+  })
+  let relationshipEntries = $derived.by(() => {
+    if (!currentCharacter?.relationships || typeof currentCharacter.relationships !== 'object') return []
+    return Object.entries(currentCharacter.relationships)
+      .filter(([urn, label]) => String(urn).trim() && String(label).trim())
+      .map(([target_urn, relationship_label]) => ({ target_urn, relationship_label }))
+  })
+  let relationshipNodes = $derived.by(() => {
+    return relationshipEntries.map((entry) => {
+      const localMatch = runCharacters.find((character) => character?.id === entry.target_urn) ?? null
+      const cached = relationshipNodeCache[entry.target_urn] ?? null
+      const resolvedCharacter = localMatch ?? cached?.character ?? null
+      return {
+        ...entry,
+        run_id: localMatch ? selected?.run_id : (cached?.run_id ?? ''),
+        name: resolvedCharacter?.name || trimUrn(entry.target_urn),
+        avatar_data: resolvedCharacter?.image_data || '',
+        loading: Boolean(relationshipLookupPending[entry.target_urn]) && !resolvedCharacter,
+      }
+    })
+  })
 
   // ── API helpers ────────────────────────────────────────────
   async function loadGallery() {
@@ -49,6 +83,7 @@
   async function openRun(runId) {
     selectedItem = items.find((i) => i.run_id === runId) ?? null
     selected = null
+    selectedCharacterId = ''
     flipped = false
     activeTab = 'bio'
     roleDdOpen = false
@@ -59,21 +94,29 @@
       const res = await fetch(`/api/runs/${runId}`)
       if (!res.ok) return
       selected = await res.json()
+      selectedCharacterId = selected?.state?.characters?.[0]?.id ?? ''
     } finally {
       modalLoading = false
     }
   }
 
-  async function navigateToRun(runId, newHistory, newForward) {
+  async function navigateToCharacter(targetEntry, newHistory, newForward) {
+    if (!targetEntry?.run_id) return
     modalLoading = true
     flipped = true
     activeTab = 'bio'
     roleDdOpen = false
     try {
-      const res = await fetch(`/api/runs/${runId}`)
-      if (!res.ok) return
-      selected = await res.json()
-      selectedItem = items.find((i) => i.run_id === runId) ?? selectedItem
+      if (selected?.run_id === targetEntry.run_id) {
+        selectedCharacterId = targetEntry.character_id || selectedCharacterId
+      } else {
+        const res = await fetch(`/api/runs/${targetEntry.run_id}`)
+        if (!res.ok) return
+        selected = await res.json()
+        selectedItem = items.find((i) => i.run_id === targetEntry.run_id) ?? selectedItem
+        const fallbackId = selected?.state?.characters?.[0]?.id ?? ''
+        selectedCharacterId = targetEntry.character_id || fallbackId
+      }
       navHistory = newHistory
       navForward = newForward
     } finally {
@@ -84,6 +127,7 @@
   function closeModal() {
     selectedItem = null
     selected = null
+    selectedCharacterId = ''
     flipped = false
     navHistory = []
     navForward = []
@@ -117,22 +161,39 @@
   }
 
   // ── Navigation helpers ─────────────────────────────────────
+  function capNav(entries) {
+    if (!Array.isArray(entries)) return []
+    if (entries.length <= MAX_NAV_DEPTH) return entries
+    return entries.slice(entries.length - MAX_NAV_DEPTH)
+  }
+
+  function currentNavEntry() {
+    if (!selected || !currentCharacter) return null
+    return {
+      run_id: selected.run_id,
+      character_id: String(currentCharacter.id || ''),
+      character_name: currentCharacter.name || 'Character',
+    }
+  }
+
   function navBack() {
     if (navHistory.length === 0 || !selected) return
-    const entry = { run_id: selected.run_id, character_name: currentCharacter?.name ?? 'Character' }
-    const newForward = [entry, ...navForward].slice(0, 20)
+    const entry = currentNavEntry()
+    if (!entry) return
+    const newForward = [entry, ...navForward].slice(0, MAX_NAV_DEPTH)
     const newHistory = navHistory.slice(0, -1)
-    const { run_id } = navHistory[navHistory.length - 1]
-    void navigateToRun(run_id, newHistory, newForward)
+    const target = navHistory[navHistory.length - 1]
+    void navigateToCharacter(target, newHistory, newForward)
   }
 
   function navForwardFn() {
     if (navForward.length === 0 || !selected) return
-    const entry = { run_id: selected.run_id, character_name: currentCharacter?.name ?? 'Character' }
-    const newHistory = [...navHistory, entry].slice(0, 20)
+    const entry = currentNavEntry()
+    if (!entry) return
+    const newHistory = capNav([...navHistory, entry])
     const newForward = navForward.slice(1)
-    const { run_id } = navForward[0]
-    void navigateToRun(run_id, newHistory, newForward)
+    const target = navForward[0]
+    void navigateToCharacter(target, newHistory, newForward)
   }
 
   // ── Utilities ──────────────────────────────────────────────
@@ -157,6 +218,96 @@
     return parts[parts.length - 1] || urn
   }
 
+  function initials(name) {
+    const value = String(name || '').trim()
+    if (!value) return '?'
+    return value
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('')
+  }
+
+  function characterAvatar(character) {
+    if (!character) return ''
+    if (character.image_data) return character.image_data
+    const cached = relationshipNodeCache[String(character.id || '')]
+    if (cached?.character?.image_data) return cached.character.image_data
+    return selectedItem?.avatar_data || ''
+  }
+
+  async function resolveCharacterReference(urn) {
+    const normalizedUrn = String(urn || '').trim()
+    if (!normalizedUrn) return null
+
+    const localIndex = runCharacters.findIndex((character) => character?.id === normalizedUrn)
+    if (localIndex >= 0) {
+      return {
+        run_id: selected?.run_id || '',
+        character_index: localIndex,
+        character: runCharacters[localIndex],
+      }
+    }
+
+    const cached = relationshipNodeCache[normalizedUrn]
+    if (cached) return cached
+    if (relationshipLookupPending[normalizedUrn]) return null
+
+    relationshipLookupPending = { ...relationshipLookupPending, [normalizedUrn]: true }
+    try {
+      const params = new URLSearchParams({ urn: normalizedUrn })
+      const res = await fetch(`/api/characters/by-id?${params}`)
+      if (!res.ok) return null
+      const payload = await res.json()
+      relationshipNodeCache = { ...relationshipNodeCache, [normalizedUrn]: payload }
+      return payload
+    } catch {
+      return null
+    } finally {
+      relationshipLookupPending = { ...relationshipLookupPending, [normalizedUrn]: false }
+    }
+  }
+
+  async function openRelationshipNode(targetUrn) {
+    const target = String(targetUrn || '').trim()
+    if (!target || !selected || !currentCharacter || target === currentCharacter.id) return
+
+    const resolved = await resolveCharacterReference(target)
+    if (!resolved?.run_id) return
+
+    const currentEntry = currentNavEntry()
+    if (!currentEntry) return
+    const newHistory = capNav([...navHistory, currentEntry])
+    const targetEntry = {
+      run_id: resolved.run_id,
+      character_id: target,
+      character_name: resolved.character?.name || trimUrn(target),
+    }
+    void navigateToCharacter(targetEntry, newHistory, [])
+  }
+
+  function nodeBorderColor(characterId) {
+    const target = String(characterId || '').trim()
+    if (!target) return '#cbd5e1'
+    if (currentCharacter?.id && target === currentCharacter.id) return '#1d4ed8'
+
+    const backIndex = navHistory.map((entry) => entry.character_id).lastIndexOf(target)
+    if (backIndex >= 0) {
+      const depth = navHistory.length - backIndex
+      const lightness = Math.max(82 - depth * 5, 24)
+      return `hsl(214 74% ${lightness}%)`
+    }
+
+    const forwardIndex = navForward.findIndex((entry) => entry.character_id === target)
+    if (forwardIndex >= 0) {
+      const depth = forwardIndex + 1
+      const lightness = Math.max(82 - depth * 5, 24)
+      return `hsl(145 52% ${lightness}%)`
+    }
+
+    return '#cbd5e1'
+  }
+
   function handleModalBackdrop(event) {
     if (event.target === event.currentTarget) closeModal()
   }
@@ -164,6 +315,16 @@
   function handleGlobalKeydown(event) {
     if (event.key === 'Escape' && selectedItem) closeModal()
   }
+
+  $effect(() => {
+    if (activeTab !== 'relationships' || !currentCharacter) return
+    for (const { target_urn } of relationshipEntries) {
+      const isLocal = runCharacters.some((character) => character?.id === target_urn)
+      if (!isLocal && !relationshipNodeCache[target_urn] && !relationshipLookupPending[target_urn]) {
+        void resolveCharacterReference(target_urn)
+      }
+    }
+  })
 
   onMount(() => { void loadGallery() })
 </script>
@@ -276,11 +437,15 @@
               <div class="back-layout">
                 <!-- Left: avatar -->
                 <div class="back-avatar">
-                  <img
-                    src={currentCharacter.image_data || selectedItem.avatar_data || ''}
-                    alt={currentCharacter.name}
-                    class="back-avatar-img"
-                  />
+                  {#if characterAvatar(currentCharacter)}
+                    <img
+                      src={characterAvatar(currentCharacter)}
+                      alt={currentCharacter.name}
+                      class="back-avatar-img"
+                    />
+                  {:else}
+                    <div class="back-avatar-fallback">{initials(currentCharacter.name)}</div>
+                  {/if}
                 </div>
 
                 <!-- Right: tabs -->
@@ -345,7 +510,7 @@
                                   {#each ['character', 'persona'].filter((r) => r !== (currentCharacter.role || 'character')) as r}
                                     <button
                                       class="role-dd-option"
-                                      onclick={() => void setRole(0, r)}
+                                      onclick={() => void setRole(currentCharacterIndex, r)}
                                     >{r}</button>
                                   {/each}
                                 </div>
@@ -377,21 +542,49 @@
                       <!-- Relationships tab -->
                       <div class="rel-tab">
                         <div class="rel-center">
-                          <div class="rel-node rel-current">{currentCharacter.name}</div>
+                          <div class="rel-node rel-node-card rel-current" style={`border-color: ${nodeBorderColor(currentCharacter.id)}`}>
+                            <div class="rel-node-avatar-wrap">
+                              {#if characterAvatar(currentCharacter)}
+                                <img
+                                  class="rel-node-avatar"
+                                  src={characterAvatar(currentCharacter)}
+                                  alt={currentCharacter.name}
+                                />
+                              {:else}
+                                <div class="rel-node-avatar rel-node-avatar-fallback">{initials(currentCharacter.name)}</div>
+                              {/if}
+                            </div>
+                            <span class="rel-node-name">{currentCharacter.name || 'Character'}</span>
+                          </div>
                         </div>
 
-                        {#if currentCharacter.relationships && Object.keys(currentCharacter.relationships).length > 0}
-                          <ul class="rel-list">
-                            {#each Object.entries(currentCharacter.relationships) as [targetUrn, relType]}
+                        {#if relationshipNodes.length > 0}
+                          <ul class="rel-list rel-graph">
+                            {#each relationshipNodes as node}
                               <li class="rel-entry">
-                                <span class="rel-arrow">—</span>
-                                <span class="rel-type">{relType}</span>
+                                <button
+                                  class="rel-node rel-node-card rel-node-target"
+                                  style={`border-color: ${nodeBorderColor(node.target_urn)}`}
+                                  onclick={() => void openRelationshipNode(node.target_urn)}
+                                  disabled={node.loading}
+                                  title={node.run_id ? 'Open related character' : 'Loading related character'}
+                                >
+                                  <div class="rel-node-avatar-wrap">
+                                    {#if node.avatar_data}
+                                      <img class="rel-node-avatar" src={node.avatar_data} alt={node.name} />
+                                    {:else}
+                                      <div class="rel-node-avatar rel-node-avatar-fallback">{initials(node.name)}</div>
+                                    {/if}
+                                  </div>
+                                  <span class="rel-node-name">{node.name}</span>
+                                </button>
+                                <span class="rel-arrow">←</span>
+                                <span class="rel-type">{node.relationship_label}</span>
                                 <span class="rel-arrow">→</span>
-                                <div class="rel-node">{trimUrn(targetUrn)}</div>
+                                <span class="rel-self-name">{currentCharacter.name}</span>
                               </li>
                             {/each}
                           </ul>
-                          <p class="rel-note">Full graph navigation coming soon.</p>
                         {:else}
                           <p class="rel-empty">No relationships defined.</p>
                         {/if}
@@ -667,6 +860,16 @@
     display: block;
   }
 
+  .back-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: #cbd5e1;
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
   .back-content {
     flex: 1;
     display: flex;
@@ -868,22 +1071,57 @@
   .rel-node {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     border: 2px solid #cbd5e1;
     border-radius: 8px;
-    padding: 0.35rem 0.7rem;
+    padding: 0.35rem 0.5rem;
     font-size: 0.78rem;
     font-weight: 600;
     background: #f8fafc;
     color: #334155;
     max-width: 100%;
-    text-align: center;
+    text-align: left;
+  }
+
+  .rel-node-card {
+    display: inline-flex;
+    gap: 0.4rem;
+    min-width: 10rem;
+  }
+
+  .rel-node-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rel-node-avatar-wrap {
+    flex: 0 0 auto;
+  }
+
+  .rel-node-avatar {
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 4px;
+    object-fit: cover;
+    display: block;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+  }
+
+  .rel-node-avatar-fallback {
+    display: grid;
+    place-items: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #334155;
+    background: #e2e8f0;
   }
 
   .rel-current {
-    border-color: #3b82f6;
+    border-color: #1d4ed8;
     background: #eff6ff;
     color: #1e40af;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
   }
 
   .rel-list {
@@ -900,6 +1138,25 @@
     align-items: center;
     gap: 0.35rem;
     flex-wrap: wrap;
+  }
+
+  .rel-graph {
+    gap: 0.65rem;
+  }
+
+  .rel-node-target {
+    cursor: pointer;
+    transition: transform 0.14s ease, box-shadow 0.14s ease;
+  }
+
+  .rel-node-target:hover:enabled {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  }
+
+  .rel-node-target:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .rel-arrow { color: #94a3b8; font-size: 0.85rem; }
@@ -919,6 +1176,12 @@
     color: #94a3b8;
     font-style: italic;
     margin: 0;
+  }
+
+  .rel-self-name {
+    font-size: 0.72rem;
+    color: #64748b;
+    font-weight: 600;
   }
 
   /* ── Loading state ────────────────────────────────────────── */

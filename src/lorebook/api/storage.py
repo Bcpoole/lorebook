@@ -115,6 +115,16 @@ def _clean_character_for_disk(char: dict[str, Any]) -> dict[str, Any]:
     # Ensure every saved character has a URN id
     if not out.get("id"):
         out["id"] = _make_character_urn()
+    relationships = char.get("relationships")
+    cleaned_relationships: dict[str, str] = {}
+    if isinstance(relationships, dict):
+        for raw_target, raw_relationship in relationships.items():
+            target = str(raw_target).strip()
+            label = _trim_words(str(raw_relationship).strip(), 7)
+            if not target or not label:
+                continue
+            cleaned_relationships[target] = label
+    out["relationships"] = cleaned_relationships
     return out
 
 
@@ -355,6 +365,65 @@ def list_run_previews(
     start = max(offset, 0)
     end = start + max(limit, 1)
     return {"total": total, "items": entries[start:end]}
+
+
+def find_character_by_urn(character_urn: str) -> dict[str, Any] | None:
+    target = str(character_urn or "").strip()
+    if not target:
+        return None
+
+    for run_path in get_runs_dir().glob("*.json"):
+        if run_path.name.startswith("_"):
+            continue
+        record = json.loads(run_path.read_text(encoding="utf-8"))
+        state = record.get("state")
+        if not isinstance(state, dict):
+            continue
+        characters = state.get("characters")
+        if not isinstance(characters, list):
+            continue
+
+        run_id = str(record.get("run_id") or run_path.stem)
+        for index, character in enumerate(characters):
+            if not isinstance(character, dict):
+                continue
+            current_id = str(character.get("id") or "").strip()
+            if current_id != target:
+                continue
+
+            name = str(character.get("name") or "").strip()
+            if should_replace_character_name(name):
+                name = infer_character_name(str(character.get("details") or ""), fallback=f"Character {index + 1}")
+
+            relationships = character.get("relationships")
+            cleaned_relationships: dict[str, str] = {}
+            if isinstance(relationships, dict):
+                for raw_target, raw_relationship in relationships.items():
+                    target_id = str(raw_target).strip()
+                    label = _trim_words(str(raw_relationship).strip(), 7)
+                    if not target_id or not label:
+                        continue
+                    cleaned_relationships[target_id] = label
+
+            image_data = str(character.get("image_data") or "")
+            if not image_data:
+                image_data = _image_data_from_file(str(character.get("image_file") or ""))
+
+            return {
+                "run_id": run_id,
+                "character_index": index,
+                "character": {
+                    "id": current_id,
+                    "name": name,
+                    "details": str(character.get("details") or ""),
+                    "summary": str(character.get("summary") or ""),
+                    "role": str(character.get("role") or ""),
+                    "tags": _normalize_tags(character.get("tags")),
+                    "relationships": cleaned_relationships,
+                    "image_data": image_data,
+                },
+            }
+    return None
 
 
 def update_character_role(run_id: str, character_index: int, role: str) -> dict[str, Any] | None:
