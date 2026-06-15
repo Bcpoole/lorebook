@@ -452,7 +452,7 @@
                 <div class="back-content">
                   <!-- Top bar with navigation -->
                   <div class="back-topbar">
-                    <button class="back-flip-btn" onclick={() => (flipped = false)}>← Front</button>
+                    <button class="back-flip-btn" onclick={() => (flipped = false)} aria-label="Front">🎴</button>
                     {#if navHistory.length > 0}
                       <button class="nav-btn" onclick={navBack}>← Back</button>
                     {/if}
