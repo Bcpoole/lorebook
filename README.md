@@ -87,6 +87,12 @@ npm run build
 Set-Location ..
 ```
 
+## Local config templates (open-source-safe)
+
+- Prompts load `src/lorebook/config/prompts/blank.py` when present, otherwise `src/lorebook/config/prompts/_template.py`.
+- SD styles load `src/lorebook/config/sd/styles.py` when present, otherwise `src/lorebook/config/sd/_template.py`.
+- Non-underscore files in those config folders are ignored so local/private variants stay untracked.
+
 ## API Endpoints
 
 - `POST /api/run` - blocking workflow run, saves JSON output to `outputs/runs/`

@@ -14,7 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from lorebook.characters import infer_character_name, should_replace_character_name
 from lorebook.config.prompts import get_persona_prompts
-from lorebook.config.sd_styles import DEFAULT_SD_STYLE, SD_STYLES
+from lorebook.config.sd import DEFAULT_SD_STYLE, SD_STYLES
 from lorebook.api.storage import (
     delete_draft_state,
     list_run_previews,

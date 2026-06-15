@@ -1,4 +1,4 @@
-"""Persona/prompt registry.
+"""Persona/prompt registry with local override support.
 
 Each persona is a Python module that exposes:
   META              – PersonaMeta instance
@@ -8,17 +8,30 @@ Each persona is a Python module that exposes:
   SD_PROMPT_SYSTEM  – str
   REVIEW_SUMMARY_SYSTEM – str
 
-Re-exports the *blank* persona's constants at package level so existing
-``from lorebook.config.prompts import LOREMASTER_SYSTEM`` imports keep working.
+The repository tracks only underscore-prefixed template modules. For local
+customization, create ``blank.py`` beside this file; it will be preferred over
+``_template.py``.
 """
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
 from types import ModuleType
 from typing import Dict, List
 
 from ._types import PersonaMeta
-from . import blank as _blank_module
+
+
+def _load_blank_module() -> ModuleType:
+    try:
+        return import_module(".blank", __name__)
+    except ModuleNotFoundError as exc:
+        if exc.name != f"{__name__}.blank":
+            raise
+        return import_module("._template", __name__)
+
+
+_blank_module = _load_blank_module()
 
 # ---------------------------------------------------------------------------
 # Registry – add new persona modules here
@@ -45,13 +58,11 @@ def get_persona_prompts(persona_id: str) -> ModuleType:
 # ---------------------------------------------------------------------------
 # Package-level re-exports (backward-compat with existing imports)
 # ---------------------------------------------------------------------------
-from .blank import (  # noqa: E402, F401
-    CHARACTER_SYSTEM,
-    EDITOR_SYSTEM,
-    LOREMASTER_SYSTEM,
-    REVIEW_SUMMARY_SYSTEM,
-    SD_PROMPT_SYSTEM,
-)
+LOREMASTER_SYSTEM = _blank_module.LOREMASTER_SYSTEM
+CHARACTER_SYSTEM = _blank_module.CHARACTER_SYSTEM
+EDITOR_SYSTEM = _blank_module.EDITOR_SYSTEM
+SD_PROMPT_SYSTEM = _blank_module.SD_PROMPT_SYSTEM
+REVIEW_SUMMARY_SYSTEM = _blank_module.REVIEW_SUMMARY_SYSTEM
 
 __all__ = [
     "PersonaMeta",
