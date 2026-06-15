@@ -338,11 +338,12 @@ def test_character_related_creates_bidirectional_relationships_and_persists_on_s
     source_id = source["id"]
     related_id = related["id"]
     expected_label = "trusted employee of the house guard commander"
+    expected_inverse = "employer"
 
     assert source_id.startswith("urn:lorebook:character:")
     assert related_id.startswith("urn:lorebook:character:")
     assert related["relationships"] == {source_id: expected_label}
-    assert source["relationships"][related_id] == expected_label
+    assert source["relationships"][related_id] == expected_inverse
 
     save_res = client.post(
         "/api/save",
@@ -357,7 +358,42 @@ def test_character_related_creates_bidirectional_relationships_and_persists_on_s
     assert saved is not None
     saved_char = saved["state"]["characters"][0]
     assert saved_char["id"] == source_id
-    assert saved_char["relationships"][related_id] == expected_label
+    assert saved_char["relationships"][related_id] == expected_inverse
+
+
+def test_character_related_uses_inverse_for_car_dealer_relationship(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: "Character: Lysa\nA polished vehicle broker with a silver tongue.",
+    )
+
+    client = TestClient(create_app())
+    related_res = client.post(
+        "/api/character-related",
+        json={
+            "raw_idea": "city noir",
+            "state": {
+                "raw_idea": "city noir",
+                "world_setting": "A rain-soaked metropolis.",
+                "characters": [{"name": "Kael", "details": "A street racer.", "role": "character"}],
+                "critique_notes": "",
+                "passed_inspection": False,
+            },
+            "source_character_index": 0,
+            "relationship": "car dealer",
+        },
+    )
+    assert related_res.status_code == 200
+    chars = related_res.json()["state"]["characters"]
+    source = chars[0]
+    related = chars[1]
+    source_id = source["id"]
+    related_id = related["id"]
+    assert related["relationships"][source_id] == "car dealer"
+    assert source["relationships"][related_id] == "customer"
 
 
 def test_gallery_endpoint_lists_saved_runs_and_role_toggle() -> None:
