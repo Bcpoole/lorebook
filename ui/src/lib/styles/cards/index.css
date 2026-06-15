@@ -1,3 +1,9 @@
+/*
+ * Third-party attribution:
+ * Portions of this stylesheet are derived from simeydotme/pokemon-cards-css
+ * (GPL-3.0): https://github.com/simeydotme/pokemon-cards-css/tree/acb1197633e749a1fba4412231db2f6581586d00
+ * See THIRD_PARTY_NOTICES for project-level notice details.
+ */
 @import './base.css';
 @import './regular-holo.css';
 @import './reverse-holo.css';

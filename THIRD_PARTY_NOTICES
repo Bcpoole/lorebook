@@ -1,0 +1,14 @@
+Third-Party Notices
+===================
+
+This project includes code derived from third-party open source projects.
+
+1) pokemon-cards-css
+--------------------
+- Source: https://github.com/simeydotme/pokemon-cards-css/tree/acb1197633e749a1fba4412231db2f6581586d00
+- Upstream repository: simeydotme/pokemon-cards-css
+- License: GNU General Public License v3.0 (GPL-3.0)
+- Local usage: UI holo card effect implementation in `ui\src\lib\PokeHoloCard.svelte`
+
+Please see the upstream repository for original copyright notices and
+additional license details.

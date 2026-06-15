@@ -1,7 +1,10 @@
 <script>
   import './styles/cards/index.css'
 
-  // Holo effect inspired by https://poke-holo.simey.me/ (simeydotme/pokemon-cards-css)
+  // Third-party attribution:
+  // Portions of the holo card effect are derived from simeydotme/pokemon-cards-css
+  // (GPL-3.0): https://github.com/simeydotme/pokemon-cards-css/tree/acb1197633e749a1fba4412231db2f6581586d00
+  // See THIRD_PARTY_NOTICES for project-level notice details.
   let { item, onopen = () => {}, holo = false, variant = null } = $props()
 
   let cardEl = $state(null)
