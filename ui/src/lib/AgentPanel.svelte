@@ -18,6 +18,8 @@
     reviewState = null,
     reviewPanelOpen = true,
     visibleAgentKeys = null,
+    iconOnlyCharacterActions = false,
+    confirmDeleteDialog = false,
     onnext = () => {},
     oncontinue = () => {},
     onsave = () => {},
@@ -196,6 +198,14 @@
   }
 
   function askDeleteCharacter(index) {
+    if (confirmDeleteDialog && typeof window !== 'undefined') {
+      const label = characters[index]?.name || `Character ${index + 1}`
+      const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`)
+      if (confirmed) {
+        deleteCharacter(index)
+      }
+      return
+    }
     confirmDeleteIndex = index
   }
 
@@ -545,8 +555,26 @@
                 >
                   {savedFlash[index] ? '✅' : '💾'}
                 </button>
-                <button class="edit-btn" onclick={() => startEditCharacter(index)} disabled={running}>✎ Edit</button>
-                <button class="delete-btn" onclick={() => askDeleteCharacter(index)} disabled={running || characters.length === 1}>🗑 Delete</button>
+                <button
+                  class="edit-btn"
+                  class:icon-action={iconOnlyCharacterActions}
+                  onclick={() => startEditCharacter(index)}
+                  disabled={running}
+                  title="Edit character"
+                  aria-label={`Edit ${character.name || `Character ${index + 1}`}`}
+                >
+                  {iconOnlyCharacterActions ? '✏️' : '✎ Edit'}
+                </button>
+                <button
+                  class="delete-btn"
+                  class:icon-action={iconOnlyCharacterActions}
+                  onclick={() => askDeleteCharacter(index)}
+                  disabled={running || characters.length === 1}
+                  title="Delete character"
+                  aria-label={`Delete ${character.name || `Character ${index + 1}`}`}
+                >
+                  {iconOnlyCharacterActions ? '🗑️' : '🗑 Delete'}
+                </button>
               </div>
             </header>
 
@@ -1343,6 +1371,17 @@
   .delete-btn {
     border-color: #fecaca;
     color: #b91c1c;
+  }
+
+  .icon-action {
+    min-width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 0.95rem;
+    line-height: 1;
   }
 
   .character-body {
