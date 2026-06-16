@@ -94,13 +94,29 @@
     savedName = payload.filename
   }
 
+  function handleResetStoryPage() {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Reset Story page and clear its temporary draft?')
+      if (!confirmed) return
+    }
+    stopStoryGeneration()
+    rawIdea = ''
+    loading = false
+    error = ''
+    story = null
+    savedName = ''
+  }
+
   onDestroy(() => {
     stopStoryGeneration()
   })
 </script>
 
 <section class="story-page">
-  <h2>Story Artifact</h2>
+  <div class="page-header">
+    <h2>Story Artifact</h2>
+    <button class="reset-btn" type="button" onclick={handleResetStoryPage}>Reset</button>
+  </div>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the story concept..." disabled={loading}></textarea>
   <div class="actions">
     <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
@@ -128,9 +144,13 @@
 
 <style>
   .story-page { display: grid; gap: 0.65rem; margin-top: 1rem; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  h2 { margin: 0; }
   textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem; }
   .actions { display: flex; gap: 0.5rem; }
   button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
+  .reset-btn { border-color: #94a3b8; background: #fff; color: #334155; }
+  .reset-btn:hover { border-color: #64748b; background: #f8fafc; }
   button.secondary { background: #334155; border-color: #334155; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .artifact { border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem; background: #fff; }

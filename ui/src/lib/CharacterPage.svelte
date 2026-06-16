@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
 
   import AgentPanel from './AgentPanel.svelte'
 
@@ -22,6 +22,108 @@
     savedRun = $bindable(null),
     savedName = $bindable(''),
   } = $props()
+
+  const CHARACTER_PAGE_STORAGE_KEY = 'lorebook.characterPageDraft.v1'
+
+  function emptyWorkflowState(nextRawIdea = '') {
+    return {
+      raw_idea: nextRawIdea,
+      world_setting: '',
+      characters: [],
+      critique_notes: '',
+      passed_inspection: false,
+    }
+  }
+
+  function resetCharacterPageState() {
+    rawIdea = ''
+    loading = false
+    error = ''
+    workflowState = emptyWorkflowState('')
+    activeAgent = 'character_designer'
+    pendingSave = null
+    savedRun = null
+    savedName = ''
+  }
+
+  function normalizeWorkflowState(candidate, nextRawIdea = '') {
+    const fallback = emptyWorkflowState(nextRawIdea)
+    if (!candidate || typeof candidate !== 'object') return fallback
+    return {
+      raw_idea: candidate.raw_idea ?? nextRawIdea,
+      world_setting: candidate.world_setting ?? '',
+      characters: Array.isArray(candidate.characters) ? candidate.characters : [],
+      critique_notes: candidate.critique_notes ?? '',
+      passed_inspection: candidate.passed_inspection ?? false,
+    }
+  }
+
+  function hasPersistableCharacterPageState() {
+    const hasWorkflowContent = Boolean(
+      workflowState?.world_setting?.trim() ||
+      workflowState?.critique_notes?.trim() ||
+      (workflowState?.characters?.length ?? 0) > 0
+    )
+    return Boolean(
+      rawIdea.trim() ||
+      hasWorkflowContent ||
+      pendingSave ||
+      savedRun ||
+      savedName.trim()
+    )
+  }
+
+  function persistCharacterPageState() {
+    if (typeof window === 'undefined') return
+    try {
+      if (!hasPersistableCharacterPageState()) {
+        window.localStorage.removeItem(CHARACTER_PAGE_STORAGE_KEY)
+        return
+      }
+      window.localStorage.setItem(
+        CHARACTER_PAGE_STORAGE_KEY,
+        JSON.stringify({
+          rawIdea,
+          loading,
+          error,
+          workflowState,
+          activeAgent,
+          pendingSave,
+          savedRun,
+          savedName,
+        })
+      )
+    } catch {
+      // Ignore storage quota or serialization issues and keep in-memory state.
+    }
+  }
+
+  function restoreCharacterPageState() {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem(CHARACTER_PAGE_STORAGE_KEY)
+      if (!stored) return
+      const parsed = JSON.parse(stored)
+      rawIdea = parsed?.rawIdea ?? ''
+      loading = false
+      error = parsed?.error ?? ''
+      workflowState = normalizeWorkflowState(parsed?.workflowState, rawIdea)
+      activeAgent = parsed?.activeAgent ?? 'character_designer'
+      pendingSave = parsed?.pendingSave ?? null
+      savedRun = parsed?.savedRun ?? null
+      savedName = parsed?.savedName ?? ''
+    } catch {
+      // Ignore invalid cache payloads and keep defaults.
+    }
+  }
+
+  onMount(() => {
+    restoreCharacterPageState()
+  })
+
+  $effect(() => {
+    persistCharacterPageState()
+  })
 
   let activeAbortController = $state(null)
   let activeGenerationId = $state(0)
@@ -187,13 +289,27 @@
     savedName = payload.filename
   }
 
+  function handleResetCharacterPage() {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Reset Character page and clear its temporary draft?')
+      if (!confirmed) return
+    }
+    stopCharacterGeneration()
+    resetCharacterPageState()
+  }
+
   onDestroy(() => {
     stopCharacterGeneration()
   })
 </script>
 
 <section class="character-page">
-  <h2>Character Generator</h2>
+  <div class="page-header">
+    <h2>Character Generator</h2>
+    <button class="reset-btn" type="button" onclick={handleResetCharacterPage}>
+      Reset
+    </button>
+  </div>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the character concept..." disabled={loading}></textarea>
   <div class="actions">
     <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
@@ -213,6 +329,8 @@
     showContinue={false}
     llmConnected={llmConnected}
     visibleAgentKeys={['character_designer']}
+    iconOnlyCharacterActions={true}
+    confirmDeleteDialog={true}
     onrunmodule={handleModuleRun}
     oncharacterimage={handleCharacterImageGenerate}
     onspawnrelated={handleSpawnRelated}
@@ -222,10 +340,14 @@
 
 <style>
   .character-page { display: grid; gap: 0.65rem; margin-top: 1rem; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  h2 { margin: 0; }
   textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem; }
   .actions { display: flex; gap: 0.5rem; }
   button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .reset-btn { border-color: #94a3b8; background: #fff; color: #334155; }
+  .reset-btn:hover { border-color: #64748b; background: #f8fafc; }
   .error { color: #b91c1c; }
   .ok { color: #047857; }
 </style>

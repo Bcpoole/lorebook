@@ -787,6 +787,32 @@
     }
   }
 
+  function resetWorldPageState() {
+    clearRestoreBannerAutoDismiss()
+    stopGeneration(false)
+    currentRawIdea = ''
+    state = freshWorkflowState('')
+    meta = normalizeMeta(null)
+    pendingSave = null
+    savedRun = null
+    filename = ''
+    nextStage = null
+    activeAgentTab = 'loremaster'
+    restoredDraft = null
+    outputStale = false
+    showRestoreBanner = false
+    restoreBannerHovered = false
+    clearReview()
+  }
+
+  function handleResetWorldPage() {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Reset World page and clear its temporary draft?')
+      if (!confirmed) return
+    }
+    resetWorldPageState()
+  }
+
   function applyStreamingChunk(node, chunk) {
     if (node === 'loremaster') {
       return {
@@ -1543,15 +1569,7 @@
         class="restored-card-action clear-btn"
         title="Clear draft and start new"
         onclick={() => {
-          clearRestoreBannerAutoDismiss()
-          restoredDraft = null
-          outputStale = false
-          state = {}
-          meta = normalizeMeta(null)
-          currentRawIdea = ''
-          pendingSave = null
-          savedRun = null
-          activeAgentTab = 'loremaster'
+          resetWorldPageState()
           toastMessage = 'Draft cleared. Ready for new run.'
           toastVisible = true
         }}
@@ -1673,6 +1691,10 @@
 
     <main>
     {#if activeTab === 'world'}
+      <div class="page-header">
+        <h2>World Builder</h2>
+        <button class="page-reset-btn" type="button" onclick={handleResetWorldPage}>Reset</button>
+      </div>
       <RawIdeaForm
         {running}
         llmConnected={apiReady()}
@@ -1847,6 +1869,36 @@
     padding: 1rem;
     font-family: system-ui, sans-serif;
     min-width: 0;
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .page-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #0f172a;
+  }
+
+  .page-reset-btn {
+    border: 1px solid #94a3b8;
+    background: #fff;
+    color: #334155;
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .page-reset-btn:hover {
+    border-color: #64748b;
+    background: #f8fafc;
   }
 
   .persona-side-panel {

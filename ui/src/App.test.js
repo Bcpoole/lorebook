@@ -190,4 +190,30 @@ describe('App stop-generation flow', () => {
     const nextButton = await screen.findByRole('button', { name: 'Next: Character Designer' })
     expect(nextButton).toBeEnabled()
   })
+
+  it('resets only the world page state', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render((await import('./App.svelte')).default)
+
+    const storyTab = screen.getByRole('button', { name: /Story/i })
+    await fireEvent.click(storyTab)
+
+    const storyInput = screen.getByPlaceholderText('Describe the story concept...')
+    await fireEvent.input(storyInput, { target: { value: 'A city built on giant trees' } })
+
+    const worldTab = screen.getByRole('button', { name: /World/i })
+    await fireEvent.click(worldTab)
+
+    const worldInput = screen.getByPlaceholderText('Describe your world idea…')
+    await fireEvent.input(worldInput, { target: { value: 'A storm-wracked sea kingdom' } })
+
+    const resetButton = screen.getByRole('button', { name: 'Reset' })
+    await fireEvent.click(resetButton)
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(worldInput).toHaveValue('')
+
+    await fireEvent.click(storyTab)
+    expect(screen.getByPlaceholderText('Describe the story concept...')).toHaveValue('A city built on giant trees')
+  })
 })
