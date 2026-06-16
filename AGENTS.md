@@ -32,7 +32,7 @@ The FastAPI backend lives in `src/lorebook/api/`:
 - `routes/stream.py` — `GET /api/stream?raw_idea=...` — SSE per-node streaming
 - `routes/graph.py` — `GET /api/graph` — Mermaid diagram of the workflow
 
-The Svelte+Vite frontend lives in `ui/`. Run both together with `scripts/dev.ps1`.
+The Svelte+Vite frontend lives in `ui/`. Run both together with `scripts/dev.ps1` (Windows) or `scripts/dev.sh` (Linux/macOS).
 
 ## Notes
 

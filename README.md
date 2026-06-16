@@ -8,7 +8,8 @@ Lorebook is a local-first Python app for generating a world setting and companio
 - `src/lorebook/api/`: FastAPI app, routes, and persistence helpers.
 - `run.py`: Compatibility launcher that exposes the package `app`.
 - `ui/`: Svelte + Vite frontend.
-- `scripts/dev.ps1`: Starts the backend and frontend together.
+- `scripts/dev.ps1`: Starts the backend and frontend together on Windows.
+- `scripts/dev.sh`: Starts the backend and frontend together on Linux/macOS.
 - `outputs/`: Saved run artifacts and generated assets.
 - `requirements.txt`: Runtime dependencies.
 - `requirements-dev.txt`: Dev and test dependencies.
@@ -70,6 +71,11 @@ uvicorn lorebook.api.app:app --reload --port 8000
 
 ```powershell
 .\scripts\dev.ps1
+```
+
+```bash
+chmod +x ./scripts/dev.sh
+./scripts/dev.sh
 ```
 
 ## Development
