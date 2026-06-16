@@ -99,7 +99,7 @@
       height: 768,
       cfgScale: 3,
       samplerName: 'DPM++ 2M',
-      negativePromptExtra: '',
+      negativePrompt: '',
     },
   }
 
