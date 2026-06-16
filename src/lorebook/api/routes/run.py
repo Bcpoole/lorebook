@@ -43,6 +43,9 @@ def _tokens(env_var: str, default: int) -> int:
 LOREMASTER_MAX_TOKENS = _tokens("LOREBOOK_LOREMASTER_MAX_TOKENS", 2048)
 CHARACTER_MAX_TOKENS = _tokens("LOREBOOK_CHARACTER_MAX_TOKENS", 2048)
 EDITOR_MAX_TOKENS = _tokens("LOREBOOK_EDITOR_MAX_TOKENS", 512)
+WORLD_DRAFT_ID = "latest"
+STORY_DRAFT_ID = "story-latest"
+CHARACTER_DRAFT_ID = "character-latest"
 
 RELATIONSHIP_INVERSE_SYSTEM = (
     "You generate inverse relationship labels for character links. "
@@ -892,7 +895,10 @@ def _assert_sd_available(endpoint_override: str | None = None) -> None:
 
 @router.get("/restore-latest")
 async def restore_latest() -> Dict[str, Any]:
-    draft = load_draft_state("latest")
+    draft = load_draft_state(WORLD_DRAFT_ID)
+    mode = str((draft or {}).get("meta", {}).get("mode", "")).strip().lower()
+    if mode in {"story", "character"}:
+        draft = None
     return {
         "draft": draft,
     }
@@ -974,7 +980,7 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"mode": "story"},
         "save_pending": bool(body.get("save_pending", False)),
     }
-    save_draft_state(payload, "latest")
+    save_draft_state(payload, STORY_DRAFT_ID)
     return {"state": state, "story_artifact": artifact}
 
 
@@ -997,7 +1003,7 @@ async def generate_character_only(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"mode": "character"},
         "save_pending": bool(body.get("save_pending", False)),
     }
-    save_draft_state(payload, "latest")
+    save_draft_state(payload, CHARACTER_DRAFT_ID)
     return {"state": state, "character": character}
 
 
@@ -1088,7 +1094,7 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
 
     save_draft_state(
         {"raw_idea": raw_idea, "state": state, "meta": {"mode": "character"}, "save_pending": True},
-        "latest",
+        CHARACTER_DRAFT_ID,
     )
     return {"state": state, "character": new_character}
 
@@ -1096,7 +1102,7 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
 @router.post("/draft")
 async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
     if bool(body.get("clear", False)):
-        deleted = delete_draft_state("latest")
+        deleted = delete_draft_state(WORLD_DRAFT_ID)
         return {
             "ok": True,
             "cleared": True,
@@ -1109,7 +1115,7 @@ async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": body.get("meta", {}),
         "save_pending": bool(body.get("save_pending", False)),
     }
-    saved = save_draft_state(payload, "latest")
+    saved = save_draft_state(payload, WORLD_DRAFT_ID)
     return {
         **saved,
         "ok": True,
@@ -1183,7 +1189,7 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
             "meta": body.get("meta", {}),
             "save_pending": bool(body.get("save_pending", False)),
         },
-        "latest",
+        CHARACTER_DRAFT_ID,
     )
 
     return {
@@ -1238,7 +1244,7 @@ async def run_workflow(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"elapsed_ms": elapsed_ms},
     }
 
-    save_draft_state({**payload, "save_pending": not auto_save}, "latest")
+    save_draft_state({**payload, "save_pending": not auto_save}, WORLD_DRAFT_ID)
 
     if auto_save:
         saved = save_run_result(payload)
@@ -1298,7 +1304,7 @@ async def run_single_step(body: Dict[str, Any]) -> Dict[str, Any]:
             "meta": {"elapsed_ms": elapsed_ms, "next_stage": next_stage, "stage": stage},
             "save_pending": save_pending,
         },
-        "latest",
+        WORLD_DRAFT_ID,
     )
 
     return response
