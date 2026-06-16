@@ -991,13 +991,6 @@ async def generate_character_only(body: Dict[str, Any]) -> Dict[str, Any]:
 
     state = _normalize_state(raw_idea, body.get("state"))
     state["characters"] = [character]
-    payload = {
-        "raw_idea": raw_idea,
-        "state": state,
-        "meta": {"mode": "character"},
-        "save_pending": bool(body.get("save_pending", False)),
-    }
-    save_draft_state(payload, "latest")
     return {"state": state, "character": character}
 
 
@@ -1025,6 +1018,7 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
     experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
     max_length = int(experimentation_config.get("maxLength", 700))
     relationship: str = str(body.get("relationship") or "").strip()
+    context: str = str(body.get("context") or "").strip()
     source_character_index: int = max(0, int(body.get("source_character_index", 0)))
 
     state = _normalize_state(raw_idea, body.get("state"))
@@ -1049,6 +1043,8 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
         prompt_parts.append(f"World setting:\n{state['world_setting']}")
     prompt_parts.append(f"Existing character ({source_name}):\n{source_details}")
     prompt_parts.append(f"Relationship to create: {relationship}")
+    if context:
+        prompt_parts.append(f"Additional context:\n{context}")
     if raw_idea:
         prompt_parts.append(f"Original concept: {raw_idea}")
     prompt = "\n\n".join(prompt_parts)
@@ -1086,10 +1082,6 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
     new_characters.append(new_character)
     state["characters"] = new_characters
 
-    save_draft_state(
-        {"raw_idea": raw_idea, "state": state, "meta": {"mode": "character"}, "save_pending": True},
-        "latest",
-    )
     return {"state": state, "character": new_character}
 
 

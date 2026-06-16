@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
 
   import AgentPanel from './AgentPanel.svelte'
+  import Toast from './Toast.svelte'
 
   let {
     llmConnected = true,
@@ -25,6 +26,14 @@
 
   let activeAbortController = $state(null)
   let activeGenerationId = $state(0)
+  let toastMessage = $state('')
+  let toastVisible = $state(false)
+  let savedNameTimer = null
+
+  function showToast(message) {
+    toastMessage = message
+    toastVisible = true
+  }
 
   function isAbortError(error) {
     return error?.name === 'AbortError'
@@ -128,7 +137,7 @@
     markPendingSave()
   }
 
-  async function handleSpawnRelated({ relationship, sourceCharacterIndex }) {
+  async function handleSpawnRelated({ relationship, sourceCharacterIndex, context = '' }) {
     if (!rawIdea.trim() || loading || !llmConnected) return
     loading = true
     error = ''
@@ -141,6 +150,7 @@
           state: workflowState,
           source_character_index: sourceCharacterIndex,
           relationship,
+          context,
           persona_id: personaId,
         }),
       })
@@ -185,14 +195,19 @@
     const payload = await res.json()
     savedRun = payload
     savedName = payload.filename
+    showToast(`💾 Saved as ${payload.filename}`)
+    if (savedNameTimer) clearTimeout(savedNameTimer)
+    savedNameTimer = setTimeout(() => { savedName = '' }, 4000)
   }
 
   onDestroy(() => {
     stopCharacterGeneration()
+    if (savedNameTimer) clearTimeout(savedNameTimer)
   })
 </script>
 
 <section class="character-page">
+  <Toast bind:visible={toastVisible} message={toastMessage} />
   <h2>Character Generator</h2>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the character concept..." disabled={loading}></textarea>
   <div class="actions">

@@ -78,6 +78,9 @@
   let imagePromptDrafts = $state({})
   let editingReview = $state(false)
   let spawnRelationship = $state('')
+  let spawnContext = $state('')
+  let savingCharacterIndex = $state(null)
+  let savedFlash = $state({})
 
   function updateWorkflow(nextState) {
     workflowState = nextState
@@ -335,8 +338,23 @@
 
   async function handleSpawnRelated() {
     if (running || !llmConnected || characters.length === 0 || !spawnRelationship.trim()) return
-    await onspawnrelated({ relationship: spawnRelationship.trim(), sourceCharacterIndex: selectedCharacterIndex })
+    await onspawnrelated({ relationship: spawnRelationship.trim(), sourceCharacterIndex: selectedCharacterIndex, context: spawnContext.trim() })
     spawnRelationship = ''
+    spawnContext = ''
+  }
+
+  async function handleSaveCharacter(index) {
+    if (savingCharacterIndex !== null) return
+    savingCharacterIndex = index
+    try {
+      await onsavecharacter(index)
+      savedFlash = { ...savedFlash, [index]: true }
+      setTimeout(() => {
+        savedFlash = { ...savedFlash, [index]: false }
+      }, 1500)
+    } finally {
+      savingCharacterIndex = null
+    }
   }
 </script>
 
@@ -453,6 +471,12 @@
             disabled={running || !llmConnected || characters.length === 0 || !spawnRelationship.trim()}
           >Spawn Related</button>
         </div>
+        <textarea
+          class="spawn-context"
+          bind:value={spawnContext}
+          rows="2"
+          placeholder="Optional: additional context for the new character (traits, backstory hints, tone…)"
+        ></textarea>
       </div>
 
       <div class="character-toolbar">
@@ -510,15 +534,16 @@
               </div>
 
               <div class="character-actions">
-                <button class="select-btn" onclick={() => selectCharacter(index)}>
-                  {isSelected ? 'Selected' : 'Select'}
+                <button class="select-btn" class:is-selected={isSelected} onclick={() => selectCharacter(index)}>
+                  {isSelected ? '✓ Active' : 'Select'}
                 </button>
                 <button
                   class="save-char-btn"
-                  onclick={() => onsavecharacter(index)}
-                  disabled={running || !llmConnected || !character?.details?.trim()}
+                  class:save-flash={savedFlash[index]}
+                  onclick={() => handleSaveCharacter(index)}
+                  disabled={running || !llmConnected || !character?.details?.trim() || savingCharacterIndex !== null}
                 >
-                  Save
+                  {savedFlash[index] ? '✅' : '💾'}
                 </button>
                 <button class="edit-btn" onclick={() => startEditCharacter(index)} disabled={running}>✎ Edit</button>
                 <button class="delete-btn" onclick={() => askDeleteCharacter(index)} disabled={running || characters.length === 1}>🗑 Delete</button>
@@ -1143,7 +1168,12 @@
 
   .character-card.selected {
     border-color: #2563eb;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  }
+
+  .character-card.selected .character-header {
+    background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+    border-bottom-color: #bfdbfe;
   }
 
   .character-compact-header {
@@ -1271,9 +1301,43 @@
     color: #1d4ed8;
   }
 
+  .select-btn.is-selected {
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    color: #fff;
+    border-color: #1d4ed8;
+    font-weight: 700;
+  }
+
   .save-char-btn {
     border-color: #334155;
     color: #334155;
+    font-size: 1rem;
+    padding: 0.3rem 0.55rem;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .save-char-btn.save-flash {
+    background: #dcfce7;
+    border-color: #16a34a;
+    color: #15803d;
+  }
+
+  .spawn-context {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.84rem;
+    resize: vertical;
+    background: #fff;
+    color: #374151;
+    min-height: 54px;
+  }
+
+  .spawn-context::placeholder {
+    color: #a5b4fc;
+    font-style: italic;
   }
 
   .delete-btn {
