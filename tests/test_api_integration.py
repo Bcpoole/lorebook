@@ -32,6 +32,23 @@ def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
     assert "latest_run" not in payload
 
 
+def test_restore_latest_ignores_non_world_draft_mode() -> None:
+    storage.save_draft_state(
+        {
+            "raw_idea": "story idea",
+            "state": {"story_artifact": {"title": "Skyfall"}},
+            "meta": {"mode": "story"},
+            "save_pending": False,
+        }
+    )
+
+    client = TestClient(create_app())
+    res = client.get("/api/restore-latest")
+
+    assert res.status_code == 200
+    assert res.json()["draft"] is None
+
+
 def test_draft_endpoint_persists_latest_state(tmp_path: Path, monkeypatch) -> None:
     client = TestClient(create_app())
     res = client.post(
@@ -386,6 +403,40 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
     payload = res.json()
     assert payload["story_artifact"]["title"] == "Skyfall"
     assert isinstance(payload["story_artifact"]["characters_artifact"], list)
+
+
+def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    storage.save_draft_state(
+        {
+            "raw_idea": "world idea",
+            "state": {"world_setting": "persistent world"},
+            "meta": {"elapsed_ms": 12},
+            "save_pending": True,
+        }
+    )
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: (
+            '{"title":"Skyfall","description":"A compact description.","plot":["A","B"],'
+            '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
+            '"characters_artifact":[],"locations":[],"objects":[],"opening":"","examples":[]}'
+        ),
+    )
+
+    client = TestClient(create_app())
+    res = client.post("/api/story", json={"raw_idea": "story prompt"})
+    assert res.status_code == 200
+
+    world_draft = storage.load_draft_state()
+    story_draft = storage.load_draft_state("story-latest")
+    assert world_draft is not None
+    assert world_draft["raw_idea"] == "world idea"
+    assert story_draft is not None
+    assert story_draft["raw_idea"] == "story prompt"
 
 
 def test_character_endpoint_returns_single_character(monkeypatch) -> None:

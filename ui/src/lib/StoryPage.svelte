@@ -63,7 +63,7 @@
         return
       }
       const payload = await res.json()
-      story = payload.story_artifact
+      story = payload.story_artifact ?? payload.state?.story_artifact ?? null
     } catch (fetchError) {
       if (isAbortError(fetchError)) return
       error = 'Failed to generate story.'
