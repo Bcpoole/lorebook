@@ -44,7 +44,14 @@
   let outputReview = $state(null)
   let reviewSummaryRequestId = 0
   let sdStyleOptions = $state(['balanced'])
-  let personaOptions = $state([])
+  const FALLBACK_PERSONA_OPTIONS = [{
+    id: 'blank',
+    name: 'Blank',
+    description: 'Unflavoured, direct prompts. No stylistic persona attached.',
+    tags: ['neutral', 'direct', 'structured'],
+    avatarUrl: '/api/personas/blank/avatar',
+  }]
+  let personaOptions = $state([...FALLBACK_PERSONA_OPTIONS])
   let imageCompare = $state(null)
   let showRestoreBanner = $state(true)
   let restoreBannerHovered = $state(false)
@@ -896,13 +903,7 @@
       if (!res.ok) return
       const data = await res.json()
       const list = Array.isArray(data) ? data : []
-      personaOptions = list.length > 0 ? list : [{
-        id: 'blank',
-        name: 'Blank',
-        description: 'Unflavoured, direct prompts. No stylistic persona attached.',
-        tags: ['neutral', 'direct', 'structured'],
-        avatarUrl: '/api/personas/blank/avatar',
-      }]
+      personaOptions = list.length > 0 ? list : [...FALLBACK_PERSONA_OPTIONS]
 
       const selectedId = experimentationLive?.general?.persona || 'blank'
       if (!personaOptions.some((p) => p.id === selectedId)) {
@@ -915,13 +916,7 @@
         }
       }
     } catch {
-      personaOptions = [{
-        id: 'blank',
-        name: 'Blank',
-        description: 'Unflavoured, direct prompts. No stylistic persona attached.',
-        tags: ['neutral', 'direct', 'structured'],
-        avatarUrl: '/api/personas/blank/avatar',
-      }]
+      personaOptions = [...FALLBACK_PERSONA_OPTIONS]
     }
   }
 
