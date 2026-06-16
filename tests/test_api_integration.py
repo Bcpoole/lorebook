@@ -95,6 +95,106 @@ def test_character_image_endpoint_updates_state(tmp_path: Path, monkeypatch) -> 
     assert Path(character["image_path"]).exists()
 
 
+def test_character_image_uses_negative_prompt_from_sd_settings(tmp_path: Path, monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    images_dir = tmp_path / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(run_routes, "_outputs_images_dir", lambda: images_dir)
+
+    encoded = base64.b64encode(b"fake-png-bytes").decode("ascii")
+    captured: dict[str, str] = {}
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"images": [encoded]}
+
+    def fake_post(*args, **kwargs):
+        payload = kwargs.get("json") or {}
+        captured["negative_prompt"] = str(payload.get("negative_prompt") or "")
+        return _FakeResponse()
+
+    monkeypatch.setattr(run_routes.requests, "get", lambda *args, **kwargs: _FakeResponse())
+    monkeypatch.setattr(run_routes.requests, "post", fake_post)
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/character-image",
+        json={
+            "raw_idea": "idea",
+            "state": {
+                "raw_idea": "idea",
+                "world_setting": "setting",
+                "characters": [{"name": "Companion", "details": "desc"}],
+                "critique_notes": "",
+                "passed_inspection": False,
+            },
+            "character_index": 0,
+            "prompt_override": "manual prompt",
+            "sd_config": {"negativePrompt": "text, logo, watermark"},
+        },
+    )
+
+    assert res.status_code == 200
+    # The user value should be substituted into the style template's {negative_prompt} slot.
+    # The "balanced" style template produces: "{negative_prompt}, low quality, blurry, ..."
+    # so the result must start with the user value and include the style's fixed negatives.
+    assert captured["negative_prompt"].startswith("text, logo, watermark")
+    assert "low quality" in captured["negative_prompt"]
+
+
+def test_character_image_empty_negative_prompt_uses_style_defaults(tmp_path: Path, monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    images_dir = tmp_path / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(run_routes, "_outputs_images_dir", lambda: images_dir)
+
+    encoded = base64.b64encode(b"fake-png-bytes").decode("ascii")
+    captured: dict[str, str] = {}
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"images": [encoded]}
+
+    def fake_post(*args, **kwargs):
+        payload = kwargs.get("json") or {}
+        captured["negative_prompt"] = str(payload.get("negative_prompt") or "")
+        return _FakeResponse()
+
+    monkeypatch.setattr(run_routes.requests, "get", lambda *args, **kwargs: _FakeResponse())
+    monkeypatch.setattr(run_routes.requests, "post", fake_post)
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/character-image",
+        json={
+            "raw_idea": "idea",
+            "state": {
+                "raw_idea": "idea",
+                "world_setting": "setting",
+                "characters": [{"name": "Companion", "details": "desc"}],
+                "critique_notes": "",
+                "passed_inspection": False,
+            },
+            "character_index": 0,
+            "prompt_override": "manual prompt",
+            "sd_config": {"negativePrompt": ""},
+        },
+    )
+
+    assert res.status_code == 200
+    # Empty user value → no leading comma, style's fixed negatives intact
+    assert not captured["negative_prompt"].startswith(",")
+    assert "low quality" in captured["negative_prompt"]
+
+
 def test_character_image_endpoint_fails_before_prompt_generation_when_sd_unavailable(monkeypatch) -> None:
     from lorebook.api.routes import run as run_routes
 

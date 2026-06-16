@@ -55,7 +55,7 @@
       height: 768,
       cfgScale: 3,
       samplerName: 'DPM++ 2M',
-      negativePromptExtra: '',
+      negativePrompt: '',
     },
   }
 
@@ -418,8 +418,13 @@
         </div>
 
         <div class="control-group">
-          <label for="sd-neg-extra">Negative Prompt Extra</label>
-          <textarea id="sd-neg-extra" rows="3" bind:value={live.sd.negativePromptExtra} placeholder="Extra negatives appended after style template"></textarea>
+          <label for="sd-neg-prompt">Negative Prompt</label>
+          <textarea
+            id="sd-neg-prompt"
+            rows="3"
+            bind:value={live.sd.negativePrompt}
+            placeholder="Appended into the style preset's negative prompt template"
+          ></textarea>
         </div>
       </section>
     {/if}

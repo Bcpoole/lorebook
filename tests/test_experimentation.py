@@ -44,6 +44,7 @@ def test_load_experimentation_returns_defaults_when_not_saved(client):
     assert data["experimentation"]["samplerSeed"] == -1
     assert data["sd"]["style"] == "balanced"
     assert data["sd"]["endpoint"] == "http://127.0.0.1:7860"
+    assert data["sd"]["negativePrompt"] == ""
 
 
 def test_save_experimentation_config(client):
@@ -72,7 +73,7 @@ def test_save_experimentation_config(client):
             "height": 768,
             "cfgScale": 4,
             "samplerName": "DPM++ 2M",
-            "negativePromptExtra": "blurry, lowres",
+            "negativePrompt": "deformed hands, text, watermark, blurry, lowres",
         },
     }
     
@@ -107,7 +108,7 @@ def test_save_and_load_round_trip(client):
             "height": 832,
             "cfgScale": 4.5,
             "samplerName": "Euler a",
-            "negativePromptExtra": "watermark",
+            "negativePrompt": "text, logo, watermark",
         },
     }
     
@@ -149,7 +150,7 @@ def test_save_multiple_times_overwrites(client):
             "height": 768,
             "cfgScale": 3,
             "samplerName": "DPM++ 2M",
-            "negativePromptExtra": "",
+            "negativePrompt": "",
         },
     }
     
@@ -177,7 +178,7 @@ def test_save_multiple_times_overwrites(client):
             "height": 1024,
             "cfgScale": 6,
             "samplerName": "Euler a",
-            "negativePromptExtra": "jpeg artifacts",
+            "negativePrompt": "extra limbs, jpeg artifacts",
         },
     }
     

@@ -803,22 +803,33 @@ def _make_sd_prompt(state: WizardState, character: CharacterState, prompt_overri
     return generated.strip().replace("\n", " ")
 
 
-def _style_sd_prompts(prompt: str, style_name: str | None = None, negative_extra: str | None = None) -> tuple[str, str, str]:
+def _style_sd_prompts(
+    prompt: str,
+    style_name: str | None = None,
+    negative_user: str | None = None,
+) -> tuple[str, str, str]:
     style_key = (style_name or "").strip().lower() or DEFAULT_SD_STYLE
     style = SD_STYLES.get(style_key, SD_STYLES[DEFAULT_SD_STYLE])
 
     prompt_template = str(style.get("prompt", "{prompt}"))
-    negative_template = str(style.get("negative_prompt", "{prompt}"))
+    negative_template = str(style.get("negative_prompt", ""))
 
     if "{prompt}" not in prompt_template:
         prompt_template = f"{prompt_template}, {{prompt}}"
-    if "{prompt}" not in negative_template:
-        negative_template = f"{negative_template}, {{prompt}}"
 
     styled_prompt = prompt_template.format(prompt=prompt)
-    styled_negative = negative_template.format(prompt=prompt)
-    if negative_extra and negative_extra.strip():
-        styled_negative = f"{styled_negative}, {negative_extra.strip()}"
+
+    negative_substituted = str(negative_user or "").strip()
+    if "{negative_prompt}" in negative_template:
+        styled_negative = negative_template.format(negative_prompt=negative_substituted)
+        # strip leading comma/space if the user value was empty
+        styled_negative = re.sub(r"^[,\s]+", "", styled_negative)
+    else:
+        # no token in template — append user value when present
+        styled_negative = negative_template
+        if negative_substituted:
+            styled_negative = f"{styled_negative}, {negative_substituted}" if styled_negative else negative_substituted
+
     return styled_prompt, styled_negative, style_key
 
 
@@ -827,7 +838,7 @@ def _render_sd_image(prompt: str, style_name: str | None = None, sd_config: dict
     styled_prompt, styled_negative, resolved_style = _style_sd_prompts(
         prompt,
         style_name=style_name,
-        negative_extra=str(config.get("negativePromptExtra", "")),
+        negative_user=str(config.get("negativePrompt", "")),
     )
     endpoint = str(config.get("endpoint") or os.getenv("LOREBOOK_SD_ENDPOINT", "http://127.0.0.1:7860")).rstrip("/")
     steps = int(config.get("steps", 30))
