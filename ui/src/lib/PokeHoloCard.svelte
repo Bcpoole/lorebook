@@ -75,7 +75,7 @@
   class:holo-variant-cosmos-holo={effectiveVariant === 'cosmos-holo'}
   bind:this={cardEl}
   type="button"
-  onclick={() => onopen(item.run_id)}
+  onclick={() => onopen(item)}
   onpointerenter={handlePointerEnter}
   onpointermove={handlePointerMove}
   onpointerleave={handlePointerLeave}

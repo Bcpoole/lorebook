@@ -13,14 +13,33 @@ def _isolate_outputs_root(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
 
 
-def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
+def test_restore_latest_returns_drafts_by_artifact(tmp_path: Path, monkeypatch) -> None:
     storage.save_draft_state(
         {
             "raw_idea": "draft idea",
             "state": {"world_setting": "draft world"},
             "meta": {"elapsed_ms": 5},
             "save_pending": True,
-        }
+        },
+        artifact_type="world",
+    )
+    storage.save_draft_state(
+        {
+            "raw_idea": "story draft",
+            "state": {"story_artifact": {"title": "Draft Story"}},
+            "meta": {"mode": "story"},
+            "save_pending": True,
+        },
+        artifact_type="story",
+    )
+    storage.save_draft_state(
+        {
+            "raw_idea": "character draft",
+            "state": {"characters": [{"name": "Ari", "details": "pilot"}]},
+            "meta": {"mode": "character"},
+            "save_pending": True,
+        },
+        artifact_type="character",
     )
 
     client = TestClient(create_app())
@@ -29,6 +48,8 @@ def test_restore_latest_returns_draft_only(tmp_path: Path, monkeypatch) -> None:
     assert res.status_code == 200
     payload = res.json()
     assert payload["draft"]["raw_idea"] == "draft idea"
+    assert payload["story_draft"]["raw_idea"] == "story draft"
+    assert payload["character_draft"]["raw_idea"] == "character draft"
     assert "latest_run" not in payload
 
 

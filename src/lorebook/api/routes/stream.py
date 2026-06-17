@@ -123,7 +123,8 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "state": state,
                 "meta": {"streaming": True, "stage": "character_designer"},
                 "save_pending": False,
-            }
+            },
+            artifact_type="world",
         )
 
         if not await ensure_connected():
@@ -161,7 +162,8 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "state": state,
                 "meta": {"streaming": True, "stage": "editor"},
                 "save_pending": bool(passed),
-            }
+            },
+            artifact_type="world",
         )
 
         if passed:
@@ -175,7 +177,8 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "raw_idea": raw_idea,
                 "state": state,
                 "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
-            }
+            },
+            artifact_type="world",
         )
         save_draft_state(
             {
@@ -183,7 +186,8 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "state": state,
                 "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
                 "save_pending": False,
-            }
+            },
+            artifact_type="world",
         )
         yield {
             "event": "run-complete",
@@ -204,7 +208,8 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
                 "state": state,
                 "meta": {"elapsed_ms": elapsed_ms, "streaming": True},
                 "save_pending": True,
-            }
+            },
+            artifact_type="world",
         )
         yield {
             "event": "save-pending",
