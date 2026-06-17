@@ -453,7 +453,7 @@ def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
     assert res.status_code == 200
 
     world_draft = storage.load_draft_state()
-    story_draft = storage.load_draft_state("story-latest")
+    story_draft = storage.load_draft_state(artifact_type="story")
     assert world_draft is not None
     assert world_draft["raw_idea"] == "world idea"
     assert story_draft is not None
@@ -590,6 +590,67 @@ def test_gallery_endpoint_lists_saved_runs_and_role_toggle() -> None:
     )
     assert role_res.status_code == 200
     assert role_res.json()["run"]["state"]["characters"][0]["role"] == "persona"
+
+
+def test_gallery_endpoint_filters_by_artifact_type() -> None:
+    world_saved = storage.save_run_result(
+        {"raw_idea": "world idea", "state": {"world_setting": "setting"}, "meta": {}},
+        filename="gallery_world_filter",
+    )
+    location_saved = storage.save_run_result(
+        {
+            "raw_idea": "location idea",
+            "state": {
+                "story_artifact": {
+                    "title": "Sky Dock",
+                    "description": "A floating dock.",
+                    "locations": [{"name": "Sky Dock", "description": "A floating dock."}],
+                }
+            },
+            "meta": {"source": "location"},
+        },
+        filename="gallery_location_filter",
+        artifact_type="location",
+    )
+    client = TestClient(create_app())
+
+    world_res = client.get("/api/gallery", params={"artifact_type": "world"})
+    assert world_res.status_code == 200
+    assert [item["run_id"] for item in world_res.json()["items"]] == [world_saved["run_id"]]
+
+    location_res = client.get("/api/gallery", params={"artifact_type": "location"})
+    assert location_res.status_code == 200
+    assert [item["run_id"] for item in location_res.json()["items"]] == [location_saved["run_id"]]
+
+
+def test_story_save_creates_location_and_object_artifacts() -> None:
+    client = TestClient(create_app())
+    save_res = client.post(
+        "/api/save",
+        json={
+            "raw_idea": "A city above storms",
+            "state": {
+                "story_artifact": {
+                    "title": "Storm Harbor",
+                    "description": "Airships and arc-light towers.",
+                    "locations": [{"name": "Sky Dock", "description": "A floating dock."}],
+                    "objects": [{"name": "Aether Compass", "description": "An arcane compass."}],
+                    "characters_artifact": [{"name": "Ari", "summary": "A daring pilot.", "role": "character"}],
+                }
+            },
+            "meta": {"source": "story"},
+            "filename": "story_bundle",
+        },
+    )
+    assert save_res.status_code == 200
+
+    location_gallery = client.get("/api/gallery", params={"artifact_type": "location"})
+    assert location_gallery.status_code == 200
+    assert any(item["title"] == "Sky Dock" for item in location_gallery.json()["items"])
+
+    object_gallery = client.get("/api/gallery", params={"artifact_type": "object"})
+    assert object_gallery.status_code == 200
+    assert any(item["title"] == "Aether Compass" for item in object_gallery.json()["items"])
 
 
 def test_character_lookup_by_urn_resolves_name_and_relationships() -> None:

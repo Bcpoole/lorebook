@@ -936,10 +936,18 @@ async def list_gallery_runs(
     search: str = "",
     tag: str = "",
     favorites_only: bool = False,
+    artifact_type: str = Query(""),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
-    listing = list_run_previews(search=search, tag=tag, favorites_only=favorites_only, limit=limit, offset=offset)
+    listing = list_run_previews(
+        search=search,
+        tag=tag,
+        favorites_only=favorites_only,
+        artifact_type=artifact_type or None,
+        limit=limit,
+        offset=offset,
+    )
     return {
         "items": listing["items"],
         "total": listing["total"],
@@ -1369,3 +1377,147 @@ async def generate_review_summary(body: Dict[str, Any]) -> Dict[str, Any]:
 
     summary = call_local_llm(get_persona_prompts(persona_id).REVIEW_SUMMARY_SYSTEM, prompt, max_length=360)
     return {"summary": summary.strip()}
+
+
+@router.get("/artifact/location/{artifact_id}")
+async def get_location_artifact(artifact_id: str) -> Dict[str, Any]:
+    """Load a saved location artifact by ID."""
+    run = load_run(artifact_id, artifact_type="location")
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Location artifact '{artifact_id}' not found")
+    return run
+
+
+@router.delete("/artifact/location/{artifact_id}")
+async def delete_location_artifact(artifact_id: str) -> Dict[str, Any]:
+    """Delete a location artifact by ID."""
+    from lorebook.api.storage import delete_artifact
+    success = delete_artifact(artifact_id, artifact_type="location")
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Location artifact '{artifact_id}' not found")
+    return {"status": "deleted", "artifact_id": artifact_id}
+
+
+@router.get("/artifact/object/{artifact_id}")
+async def get_object_artifact(artifact_id: str) -> Dict[str, Any]:
+    """Load a saved object artifact by ID."""
+    run = load_run(artifact_id, artifact_type="object")
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Object artifact '{artifact_id}' not found")
+    return run
+
+
+@router.delete("/artifact/object/{artifact_id}")
+async def delete_object_artifact(artifact_id: str) -> Dict[str, Any]:
+    """Delete an object artifact by ID."""
+    from lorebook.api.storage import delete_artifact
+    success = delete_artifact(artifact_id, artifact_type="object")
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Object artifact '{artifact_id}' not found")
+    return {"status": "deleted", "artifact_id": artifact_id}
+
+
+@router.patch("/story/{story_id}/update-location")
+async def update_story_location(story_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update a location in a story and create/update the independent artifact."""
+    location_index = int(body.get("location_index", 0))
+    updated_location = body.get("updated_location", {})
+
+    # Load the story artifact
+    story = load_run(story_id, artifact_type="story")
+    if not story:
+        raise HTTPException(status_code=404, detail=f"Story '{story_id}' not found")
+
+    # Update the location in the story
+    state = story.get("state", {})
+    if "story_artifact" not in state:
+        raise HTTPException(status_code=400, detail="Story does not have story_artifact")
+
+    story_artifact = state["story_artifact"]
+    locations = story_artifact.get("locations", [])
+    if location_index >= len(locations):
+        raise HTTPException(status_code=400, detail=f"Location index {location_index} out of range")
+
+    # Update location in place
+    locations[location_index] = {**locations[location_index], **updated_location}
+    story_artifact["locations"] = locations
+
+    # Save updated story
+    save_run_result(story)
+
+    # Create or update independent location artifact
+    location_name = str(updated_location.get("name") or f"location_{location_index + 1}").strip()
+    location_artifact = {
+        "name": location_name,
+        "description": str(updated_location.get("description") or "").strip(),
+        "atmosphere": updated_location.get("atmosphere"),
+        "accessibility": updated_location.get("accessibility"),
+        "inhabitants": updated_location.get("inhabitants"),
+        "history": updated_location.get("history"),
+    }
+
+    location_payload = {
+        "raw_idea": story.get("raw_idea", ""),
+        "state": {"story_artifact": location_artifact},
+        "meta": {"source": "story", "parent_story_id": story_id},
+    }
+    saved_location = save_run_result(location_payload, artifact_type="location")
+
+    return {
+        "story_artifact": story_artifact,
+        "location_artifact_id": saved_location.get("run_id"),
+        "status": "updated",
+    }
+
+
+@router.patch("/story/{story_id}/update-object")
+async def update_story_object(story_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an object in a story and create/update the independent artifact."""
+    object_index = int(body.get("object_index", 0))
+    updated_object = body.get("updated_object", {})
+
+    # Load the story artifact
+    story = load_run(story_id, artifact_type="story")
+    if not story:
+        raise HTTPException(status_code=404, detail=f"Story '{story_id}' not found")
+
+    # Update the object in the story
+    state = story.get("state", {})
+    if "story_artifact" not in state:
+        raise HTTPException(status_code=400, detail="Story does not have story_artifact")
+
+    story_artifact = state["story_artifact"]
+    objects_list = story_artifact.get("objects", [])
+    if object_index >= len(objects_list):
+        raise HTTPException(status_code=400, detail=f"Object index {object_index} out of range")
+
+    # Update object in place
+    objects_list[object_index] = {**objects_list[object_index], **updated_object}
+    story_artifact["objects"] = objects_list
+
+    # Save updated story
+    save_run_result(story)
+
+    # Create or update independent object artifact
+    object_name = str(updated_object.get("name") or f"object_{object_index + 1}").strip()
+    object_artifact = {
+        "name": object_name,
+        "description": str(updated_object.get("description") or "").strip(),
+        "material": updated_object.get("material"),
+        "purpose": updated_object.get("purpose"),
+        "origin": updated_object.get("origin"),
+        "properties": updated_object.get("properties"),
+    }
+
+    object_payload = {
+        "raw_idea": story.get("raw_idea", ""),
+        "state": {"story_artifact": object_artifact},
+        "meta": {"source": "story", "parent_story_id": story_id},
+    }
+    saved_object = save_run_result(object_payload, artifact_type="object")
+
+    return {
+        "story_artifact": story_artifact,
+        "object_artifact_id": saved_object.get("run_id"),
+        "status": "updated",
+    }

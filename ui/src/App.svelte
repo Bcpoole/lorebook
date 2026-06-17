@@ -8,6 +8,9 @@
   import StoryPage from './lib/StoryPage.svelte'
   import CharacterPage from './lib/CharacterPage.svelte'
   import GalleryPage from './lib/GalleryPage.svelte'
+  import WorldStoryPage from './lib/WorldStoryPage.svelte'
+  import LocationPage from './lib/LocationPage.svelte'
+  import ObjectPage from './lib/ObjectPage.svelte'
   import { DraftSyncController } from './lib/draftSync'
   import { PollingQueue } from './lib/pollingQueue'
 
@@ -1788,6 +1791,8 @@
       />
     {:else if activeTab === 'gallery'}
       <GalleryPage />
+    {:else if activeTab === 'world-story'}
+      <WorldStoryPage />
     {/if}
     </main>
 

@@ -104,14 +104,69 @@ Set-Location ..
 - `POST /api/run` - blocking workflow run, saves JSON output to `outputs/world/`
 - `POST /api/story` - generate structured Story artifact fields (`title`, `description`, `plot`, `locations`, `objects`, etc.)
 - `POST /api/character` - generate one standalone character payload
-- `GET /api/gallery` - list saved run previews with search/tag filtering
+- `POST /api/save` - save a run with optional story sub-artifact extraction
+- `GET /api/gallery` - list saved run previews with search/tag filtering and optional artifact type filter
 - `POST /api/character-role` - persist character/persona role changes to a saved run
 - `GET /api/stream?raw_idea=...` - SSE stream of per-node updates
 - `GET /api/graph` - Mermaid graph definition for the workflow
+- `GET /api/artifact/location/{artifact_id}` - retrieve standalone location artifact
+- `DELETE /api/artifact/location/{artifact_id}` - delete location artifact and folder
+- `GET /api/artifact/object/{artifact_id}` - retrieve standalone object artifact
+- `DELETE /api/artifact/object/{artifact_id}` - delete object artifact and folder
+- `PATCH /api/story/{id}/update-location` - update story location and auto-create independent artifact
+- `PATCH /api/story/{id}/update-object` - update story object and auto-create independent artifact
 
-## Saved Output
+## Saved Output & Artifact Structure
 
-Saved artifacts are organized by type and item folder: world runs under `outputs/world/<artifact_id>/artifact.json`, character artifacts under `outputs/character/<artifact_id>/artifact.json`, and story artifacts under `outputs/story/<artifact_id>/artifact.json`. Character images are written alongside their artifact JSON in the same item folder. Drafts are stored per type under each folder's `_drafts/` subdirectory.
+Artifacts are organized by type with subdirectories and co-located resources:
+
+- **World**: `outputs/world/<run_id>/artifact.json`
+- **Character**: `outputs/character/<run_id>/artifact.json` (images: `<run_id>.png`, `<run_id>_2.png`, etc.)
+- **Story**: `outputs/story/<run_id>/artifact.json` (includes sub-artifacts: locations, objects, characters_artifact)
+- **Location**: `outputs/location/<run_id>/artifact.json` (images: `<run_id>_locations_1.png`, etc.)
+- **Object**: `outputs/object/<run_id>/artifact.json` (images: `<run_id>_objects_1.png`, etc.)
+
+**Image Co-location Strategy**: Character images and story entity images (location/object/character sub-artifacts) are written to the same folder as their artifact.json file. Image paths are normalized from volatile fields (`image_path`, `image_data`) to persistent references (`image_file` for characters, `image_name` for story entities). This ensures images aren't lost on re-saves and follow standard naming conventions.
+
+**Story Sub-Artifact Extraction**: When a story artifact is saved, locations, objects, and character details are automatically extracted and saved as separate artifacts if they contain meaningful content (name + description). Each becomes its own gallery entry, indexed by type and order.
+
+Drafts are stored per type under each folder's `_drafts/` subdirectory (e.g., `outputs/world/_drafts/latest.json`).
+
+## Artifact Gallery & Editing
+
+The gallery provides browsing and editing capabilities for all artifact types:
+
+### Gallery Features
+- **Tab-based browsing**: Switch between Character, Location, Object, and Story tabs
+- **Search & filtering**: Search by name/content, filter by favorites
+- **Card preview**: Quick preview with image, title, and summary
+- **Modal viewing**: Click cards to open detailed modals for each artifact type
+
+### Artifact Editing (Phase 1)
+#### Dedicated Editor Pages
+- **Location editor** (`/location/:id`): Full CRUD for location artifacts with atmosphere, accessibility, inhabitants, and history fields
+- **Object editor** (`/object/:id`): Full CRUD for object artifacts with material, purpose, origin, and properties
+- Features include image upload (base64 encoding), validation, and delete with confirmation
+
+#### Inline Story Sub-Item Editing
+- **Expandable sections** in story modal for Locations, Objects, and Characters
+- **Toggle edit mode** on any story sub-item without leaving the modal
+- **Auto-artifact creation**: Editing a story's location or object automatically creates an independent gallery entry
+- **Form validation**: Per-field error messages, required field checks
+- **Toast notifications**: User feedback for save/error states
+
+### Gallery Modals
+- **StoryArtifactModal**: Displays story with collapsible Locations, Objects, Characters sections
+- **LocationModal**: Displays standalone location artifacts with description, atmosphere, inhabitants, history
+- **ObjectModal**: Displays standalone object artifacts with description, material, purpose, origin, properties
+- **CharacterModal**: Displays character details with biography and relationship graph
+
+### How To Use
+1. Open the **Gallery** tab in the top navigation
+2. Click an artifact card to open its modal
+3. For stories: Expand the "Locations" or "Objects" sections and click "Edit" to inline edit
+4. Editing a story sub-item automatically creates it as a separate gallery entry
+5. Switch tabs to view Character, Location, or Object artifacts independently
 
 ## Offline Fixture Testing
 
