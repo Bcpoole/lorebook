@@ -2,6 +2,20 @@
   import { onMount } from 'svelte'
   import MarkdownBlock from './MarkdownBlock.svelte'
   import PokeHoloCard from './PokeHoloCard.svelte'
+  import StoryArtifactModal from './StoryArtifactModal.svelte'
+  import LocationModal from './LocationModal.svelte'
+  import ObjectModal from './ObjectModal.svelte'
+
+  let {
+    title = 'Saved Gallery',
+    tabs = [
+      { id: 'character', label: 'Character', artifactType: 'character' },
+      { id: 'location', label: 'Location', artifactType: 'location' },
+      { id: 'object', label: 'Object', artifactType: 'object' },
+    ],
+    initialTab = 'character',
+    enableCharacterModal = true,
+  } = $props()
 
   // ── State ──────────────────────────────────────────────────
   let items = $state([])
@@ -10,6 +24,7 @@
   let search = $state('')
   let tag = $state('')
   let favoritesOnly = $state(false)
+  let activeArtifactTab = $state(initialTab)
 
   // Modal
   let selectedItem = $state(null) // gallery item (immediate, from local list)
@@ -21,12 +36,18 @@
   let roleDdOpen = $state(false)
   let relationshipNodeCache = $state({})
   let relationshipLookupPending = $state({})
+  let showStoryModal = $state(false)
 
   // Navigation history (for relationship traversal)
   let navHistory = $state([]) // [{run_id, character_id, character_name}]
   let navForward = $state([]) // [{run_id, character_id, character_name}]
 
   const MAX_NAV_DEPTH = 20
+  let activeArtifactType = $derived.by(() => {
+    const current = tabs.find((tab) => tab.id === activeArtifactTab) ?? tabs[0]
+    return current?.artifactType ?? 'character'
+  })
+  let showCharacterModal = $derived(enableCharacterModal && activeArtifactType === 'character')
 
   let runCharacters = $derived(selected?.state?.characters ?? [])
   let currentCharacter = $derived.by(() => {
@@ -69,6 +90,7 @@
       if (search.trim()) params.set('search', search.trim())
       if (tag.trim()) params.set('tag', tag.trim().toLowerCase())
       if (favoritesOnly) params.set('favorites_only', 'true')
+      if (activeArtifactType) params.set('artifact_type', activeArtifactType)
       const res = await fetch(`/api/gallery?${params}`)
       if (!res.ok) { error = 'Failed to load gallery.'; return }
       const payload = await res.json()
@@ -81,6 +103,7 @@
   }
 
   async function openRun(itemOrRunId) {
+    if (!showCharacterModal && activeArtifactType !== 'story' && activeArtifactType !== 'location' && activeArtifactType !== 'object') return
     const targetItem = typeof itemOrRunId === 'object' && itemOrRunId
       ? itemOrRunId
       : items.find((i) => i.run_id === itemOrRunId) ?? null
@@ -89,6 +112,7 @@
     selected = null
     selectedCharacterId = ''
     flipped = false
+    showStoryModal = false
     activeTab = 'bio'
     roleDdOpen = false
     navHistory = []
@@ -101,7 +125,14 @@
       const res = await fetch(`/api/runs/${runId}${suffix}`)
       if (!res.ok) return
       selected = await res.json()
-      selectedCharacterId = selected?.state?.characters?.[0]?.id ?? ''
+      const artifactType = targetItem?.artifact_type || selected?.artifact_type
+      if (artifactType === 'story') {
+        showStoryModal = true
+      } else if (artifactType === 'location' || artifactType === 'object') {
+        showStoryModal = true
+      } else {
+        selectedCharacterId = selected?.state?.characters?.[0]?.id ?? ''
+      }
     } finally {
       modalLoading = false
     }
@@ -352,14 +383,39 @@
     }
   })
 
-  onMount(() => { void loadGallery() })
+  $effect(() => {
+    activeArtifactType
+    closeModal()
+    void loadGallery()
+  })
+
+  onMount(() => {
+    if (!tabs.some((tab) => tab.id === activeArtifactTab)) {
+      activeArtifactTab = tabs[0]?.id ?? 'character'
+    }
+  })
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <section class="gallery-page">
   <div class="gallery-topbar">
-    <h2>Saved Gallery</h2>
+    <h2>{title}</h2>
+  </div>
+
+  <div class="artifact-tabs" role="tablist" aria-label={`${title} artifact types`}>
+    {#each tabs as tab}
+      <button
+        type="button"
+        class="artifact-tab-btn"
+        class:active={activeArtifactTab === tab.id}
+        role="tab"
+        aria-selected={activeArtifactTab === tab.id}
+        onclick={() => (activeArtifactTab = tab.id)}
+      >
+        {tab.label}
+      </button>
+    {/each}
   </div>
 
   <div class="filters">
@@ -378,7 +434,7 @@
 
   <div class="grid">
     {#each items as item}
-      <PokeHoloCard {item} onopen={openRun} variant={cardVariantFor(item)} />
+      <PokeHoloCard {item} onopen={showCharacterModal || activeArtifactType === 'story' || activeArtifactType === 'location' || activeArtifactType === 'object' ? openRun : (() => {})} variant={cardVariantFor(item)} />
     {/each}
     {#if !loading && items.length === 0}
       <p class="empty-note">No items found.</p>
@@ -387,7 +443,7 @@
 </section>
 
 <!-- ── Modal ─────────────────────────────────────────────────── -->
-{#if selectedItem}
+{#if showCharacterModal && selectedItem}
   <div
     class="modal"
     role="dialog"
@@ -633,6 +689,53 @@
   </div>
 {/if}
 
+<!-- ── Story Modal ──────────────────────────────────────────────────── -->
+{#if showStoryModal && selected && selectedItem}
+  <div
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-label={`${selected.artifact_type || selectedItem.artifact_type}: ${selectedItem.title}`}
+    onclick={handleModalBackdrop}
+    onkeydown={(e) => e.key === 'Escape' && closeModal()}
+  >
+    <div class="modal-overlay">
+      <div class="modal-card">
+        {#if selected?.artifact_type === 'story' && selected?.state?.story_artifact}
+          <StoryArtifactModal
+            storyArtifact={selected.state.story_artifact}
+            storyId={selected.run_id}
+            onClose={closeModal}
+            onUpdate={() => {
+              void openRun(selected.run_id)
+            }}
+          />
+        {:else if selected?.artifact_type === 'location' && selected?.state?.story_artifact}
+          <LocationModal
+            location={selected.state.story_artifact}
+            onClose={closeModal}
+            onEdit={() => {}}
+            onDelete={() => {}}
+          />
+        {:else if selected?.artifact_type === 'object' && selected?.state?.story_artifact}
+          <ObjectModal
+            object={selected.state.story_artifact}
+            onClose={closeModal}
+            onEdit={() => {}}
+            onDelete={() => {}}
+          />
+        {:else if !modalLoading}
+          <div class="modal-empty">
+            <p>Could not load artifact data.</p>
+            <button class="back-flip-btn" onclick={closeModal}>Close</button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   /* ── Gallery layout ───────────────────────────────────────── */
   .gallery-page { display: grid; gap: 0.8rem; margin-top: 1rem; }
@@ -645,6 +748,28 @@
   }
 
   .gallery-topbar h2 { margin: 0; }
+
+  .artifact-tabs {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .artifact-tab-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .artifact-tab-btn.active {
+    border-color: #1d4ed8;
+    background: #2563eb;
+    color: #fff;
+  }
 
   /* ── Filters ──────────────────────────────────────────────── */
   .filters { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
