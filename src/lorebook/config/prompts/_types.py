@@ -1,7 +1,7 @@
 """Shared types for the persona/prompt system."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

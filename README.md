@@ -102,12 +102,17 @@ Set-Location ..
 ## API Endpoints
 
 - `POST /api/run` - blocking workflow run, saves JSON output to `outputs/world/`
-- `POST /api/story` - generate structured Story artifact fields (`title`, `description`, `plot`, `locations`, `objects`, etc.)
+- `POST /api/story` - generate or refine structured Story artifacts with setup/instruction/action controls (`generate`, `suggest_next_beat`, `rewrite_opening`, `add_character`, `add_location`, `add_object`, `add_example`)
+- `POST /api/story-item` - edit/delete individual story list items (`characters_artifact`, `locations`, `objects`, `examples`) and generate SD prompts/images for each item
 - `POST /api/character` - generate one standalone character payload
 - `GET /api/gallery` - list saved run previews with search/tag filtering
 - `POST /api/character-role` - persist character/persona role changes to a saved run
 - `GET /api/stream?raw_idea=...` - SSE stream of per-node updates
 - `GET /api/graph` - Mermaid graph definition for the workflow
+
+`POST /api/story` accepts optional `story_setup` (`protagonist`, `opening_preference`, `output_format`, `tone`, `length_target`), `instruction`, `action`, and current `state.story_artifact` for refinement passes. The response includes `generation_quality` (`full`, `repaired`, `fallback`) for UI diagnostics.
+
+Story draft internals are also split into per-section JSON files under `outputs/story/_drafts/<draft>_story_sections/`. List sections are persisted per-item (for example `objects/silver_keycard.json`) to keep section-focused updates resilient. Item image files are co-located with those item JSON files, and item JSON stores `image_name` (filename only).
 
 ## Saved Output
 

@@ -63,6 +63,15 @@
     error: '',
     story: null,
     savedName: '',
+    storySetup: {
+      protagonist: '',
+      opening_preference: '',
+      output_format: '',
+      tone: '',
+      length_target: '',
+    },
+    storyInstruction: '',
+    generationQuality: '',
   })
   let characterPageState = $state({
     rawIdea: '',
@@ -426,6 +435,9 @@
 
   function applyRestoredStoryDraft(payload) {
     if (!payload?.state?.story_artifact) return false
+    const restoredSetup = payload.state?.story_setup && typeof payload.state.story_setup === 'object'
+      ? payload.state.story_setup
+      : {}
     storyPageState = {
       ...storyPageState,
       rawIdea: payload.raw_idea ?? '',
@@ -433,6 +445,16 @@
       error: '',
       story: payload.state.story_artifact,
       savedName: '',
+      storySetup: {
+        protagonist: '',
+        opening_preference: '',
+        output_format: '',
+        tone: '',
+        length_target: '',
+        ...restoredSetup,
+      },
+      storyInstruction: payload.state?.story_instruction ?? '',
+      generationQuality: payload.meta?.story_generation_quality ?? '',
     }
     return true
   }
@@ -1771,6 +1793,9 @@
         bind:error={storyPageState.error}
         bind:story={storyPageState.story}
         bind:savedName={storyPageState.savedName}
+        bind:storySetup={storyPageState.storySetup}
+        bind:storyInstruction={storyPageState.storyInstruction}
+        bind:generationQuality={storyPageState.generationQuality}
       />
     {:else if activeTab === 'character'}
       <CharacterPage

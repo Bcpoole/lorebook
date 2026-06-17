@@ -159,6 +159,130 @@ def test_drafts_are_separated_by_artifact_type(tmp_path: Path, monkeypatch) -> N
     assert all_drafts["story"]["raw_idea"] == "story draft"
 
 
+def test_story_draft_writes_section_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
+
+    storage.save_draft_state(
+        {
+            "raw_idea": "story draft",
+            "state": {
+                "story_artifact": {
+                    "title": "Skyfall",
+                    "description": "A short story setup with enough detail.",
+                    "plot": ["A", "B", "C"],
+                    "setting": "Cloud city",
+                    "style": "adventure",
+                    "tags": ["sky"],
+                    "characters_artifact": [{"name": "Ari", "role": "pilot", "summary": "ace"}],
+                    "locations": [{"name": "Sky Port", "description": "Busy port"}],
+                    "objects": [{"name": "Silver Keycard", "description": "Worn"}],
+                    "opening": "Open.",
+                    "examples": [{"label": "Sample Passage", "text": "Wind screamed."}],
+                }
+            },
+            "meta": {"mode": "story"},
+            "save_pending": True,
+        },
+        artifact_type="story",
+    )
+
+    drafts_dir = storage.get_drafts_dir("story")
+    assert (drafts_dir / "latest_story_sections" / "overview.json").exists()
+    assert (drafts_dir / "latest_story_sections" / "characters_artifact" / "ari.json").exists()
+    assert (drafts_dir / "latest_story_sections" / "objects" / "silver_keycard.json").exists()
+    assert (drafts_dir / "snapshot_story_sections" / "examples" / "sample_passage.json").exists()
+
+
+def test_story_run_writes_section_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
+
+    saved = storage.save_run_result(
+        {
+            "raw_idea": "story run",
+            "state": {
+                "story_artifact": {
+                    "title": "Skyfall",
+                    "description": "A short story setup with enough detail.",
+                    "plot": ["A", "B", "C"],
+                    "setting": "Cloud city",
+                    "style": "adventure",
+                    "tags": ["sky"],
+                    "characters_artifact": [{"name": "Ari", "role": "pilot", "summary": "ace"}],
+                    "locations": [{"name": "Sky Port", "description": "Busy port"}],
+                    "objects": [{"name": "Silver Keycard", "description": "Worn"}],
+                    "opening": "Open.",
+                    "examples": [{"label": "Sample Passage", "text": "Wind screamed."}],
+                }
+            },
+            "meta": {"source": "story"},
+        },
+        filename="story_sections",
+    )
+
+    run_dir = Path(saved["run_path"]).parent
+    assert (run_dir / "story_sections" / "overview.json").exists()
+    assert (run_dir / "story_sections" / "characters_artifact" / "ari.json").exists()
+    assert (run_dir / "story_sections" / "objects" / "silver_keycard.json").exists()
+
+
+def test_story_item_image_is_colocated_and_uses_image_name(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
+
+    source_image = tmp_path / "images" / "notebook.png"
+    source_image.parent.mkdir(parents=True, exist_ok=True)
+    source_image.write_bytes(b"fake-image-bytes")
+
+    storage.save_draft_state(
+        {
+            "raw_idea": "story draft",
+            "state": {
+                "story_artifact": {
+                    "title": "Skyfall",
+                    "description": "A short story setup with enough detail.",
+                    "plot": ["A", "B", "C"],
+                    "setting": "Cloud city",
+                    "style": "adventure",
+                    "tags": ["sky"],
+                    "characters_artifact": [],
+                    "locations": [],
+                    "objects": [
+                        {
+                            "name": "A Worn Leather Notebook",
+                            "description": "Frayed and ink stained.",
+                            "image_path": str(source_image),
+                            "image_prompt": "prompt",
+                            "image_style": "balanced",
+                            "image_data": "data:image/png;base64,AAAA",
+                        }
+                    ],
+                    "opening": "Open.",
+                    "examples": [],
+                }
+            },
+            "meta": {"mode": "story"},
+            "save_pending": True,
+        },
+        artifact_type="story",
+    )
+
+    item_json_path = (
+        storage.get_drafts_dir("story")
+        / "latest_story_sections"
+        / "objects"
+        / "a_worn_leather_notebook.json"
+    )
+    assert item_json_path.exists()
+    persisted = json.loads(item_json_path.read_text(encoding="utf-8"))
+    item_data = persisted["data"]
+
+    assert "image_prompt" not in item_data
+    assert "image_style" not in item_data
+    assert "image_data" not in item_data
+    assert "image_path" not in item_data
+    assert item_data["image_name"] == "a_worn_leather_notebook.png"
+    assert (item_json_path.parent / item_data["image_name"]).exists()
+
+
 def test_character_image_is_saved_inside_artifact_folder(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
 

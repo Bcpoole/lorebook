@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import importlib
 
 # Keep the original top-level entry script working while code lives in src/.
 ROOT = Path(__file__).resolve().parent
@@ -7,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from lorebook import app
+app = importlib.import_module("lorebook").app
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, NotRequired, TypedDict
+from typing import Dict, List, NotRequired, TypedDict
 
 
 class StoryEntity(TypedDict):
@@ -54,3 +54,5 @@ class WizardState(TypedDict):
     critique_notes: str
     passed_inspection: bool
     story_artifact: NotRequired[StoryArtifact]
+    story_setup: NotRequired[Dict[str, str]]
+    story_instruction: NotRequired[str]

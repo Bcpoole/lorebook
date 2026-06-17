@@ -1,4 +1,5 @@
 import base64
+import json
 from pathlib import Path
 
 import pytest
@@ -409,7 +410,7 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
         run_routes,
         "call_local_llm",
         lambda *args, **kwargs: (
-            '{"title":"Skyfall","description":"A compact description.","plot":["A","B"],'
+            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":["A","B","C","D","E"],'
             '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
             '"characters_artifact":[{"name":"Ari","role":"pilot","summary":"ace","tags":["pilot"]}],'
             '"locations":[{"name":"Dock","description":"windy","tags":["port"]}],'
@@ -424,6 +425,7 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
     payload = res.json()
     assert payload["story_artifact"]["title"] == "Skyfall"
     assert isinstance(payload["story_artifact"]["characters_artifact"], list)
+    assert payload["generation_quality"] == "full"
 
 
 def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
@@ -442,7 +444,7 @@ def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
         run_routes,
         "call_local_llm",
         lambda *args, **kwargs: (
-            '{"title":"Skyfall","description":"A compact description.","plot":["A","B"],'
+            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":["A","B","C","D","E"],'
             '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
             '"characters_artifact":[],"locations":[],"objects":[],"opening":"","examples":[]}'
         ),
@@ -453,11 +455,330 @@ def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
     assert res.status_code == 200
 
     world_draft = storage.load_draft_state()
-    story_draft = storage.load_draft_state("story-latest")
+    story_draft = storage.load_draft_state(artifact_type="story")
     assert world_draft is not None
     assert world_draft["raw_idea"] == "world idea"
     assert story_draft is not None
     assert story_draft["raw_idea"] == "story prompt"
+
+
+def test_story_endpoint_accepts_setup_and_instruction(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    calls: dict[str, str] = {"prompt": ""}
+
+    def fake_llm(system: str, prompt: str, max_length: int = 1200) -> str:
+        calls["prompt"] = prompt
+        return (
+            '{"title":"Skyfall","description":"A compact description with enough detail for quality thresholds.","'
+            'plot":["A","B","C","D","E"],'
+            '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
+            '"characters_artifact":[],"locations":[],"objects":[],"opening":"Once above the storm.","examples":[]}'
+        )
+
+    monkeypatch.setattr(run_routes, "call_local_llm", fake_llm)
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/story",
+        json={
+            "raw_idea": "story prompt",
+            "instruction": "Add suspense.",
+            "story_setup": {
+                "protagonist": "Ari",
+                "opening_preference": "dialogue-first",
+                "output_format": "chapter outline",
+                "tone": "tense",
+                "length_target": "short story",
+            },
+        },
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["story_setup"]["tone"] == "tense"
+    assert payload["story_instruction"] == "Add suspense."
+    assert "Story setup preferences:" in calls["prompt"]
+    assert "Instruction:\nAdd suspense." in calls["prompt"]
+
+
+def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    calls: dict[str, str] = {"prompt": ""}
+
+    def fake_llm(system: str, prompt: str, max_length: int = 1200) -> str:
+        calls["prompt"] = prompt
+        return (
+            '{"title":"Skyfall","description":"A compact description with enough detail for quality thresholds across every section in the payload.",'
+            '"plot":["A","B","C","D","E","F"],'
+            '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
+            '"characters_artifact":[],"locations":[],"objects":[],"opening":"New opening.","examples":[]}'
+        )
+
+    monkeypatch.setattr(run_routes, "call_local_llm", fake_llm)
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/story",
+        json={
+            "raw_idea": "story prompt",
+            "action": "rewrite_opening",
+            "state": {
+                "story_artifact": {
+                    "title": "Old",
+                    "description": "Old description text with enough words to satisfy minimum threshold.",
+                    "plot": ["A", "B", "C", "D", "E"],
+                    "setting": "Old setting",
+                    "style": "neutral",
+                    "tags": [],
+                    "characters_artifact": [],
+                    "locations": [],
+                    "objects": [],
+                    "opening": "Old opening.",
+                    "examples": [],
+                }
+            },
+        },
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["action"] == "rewrite_opening"
+    assert payload["story_artifact"]["opening"] == "New opening."
+    assert "Current context JSON:" in calls["prompt"]
+
+
+def test_story_action_fallback_preserves_existing_sections(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    # Return malformed output twice (initial + repair) to force fallback on the action update.
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: '{"characters_artifact":[{"name":"Owl"')
+
+    existing_story = {
+        "title": "Original",
+        "description": "Original description with enough words to keep quality checks happy.",
+        "plot": ["A", "B", "C", "D", "E"],
+        "setting": "Hundred Acre Wood",
+        "style": "whimsical",
+        "tags": ["adventure"],
+        "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
+        "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
+        "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
+        "opening": "It was a sunny morning.",
+        "examples": [{"label": "sample", "text": "sample text"}],
+    }
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/story",
+        json={
+            "raw_idea": "pooh vegas",
+            "action": "add_character",
+            "state": {"story_artifact": existing_story},
+        },
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["generation_quality"] == "fallback"
+    assert payload["story_artifact"]["title"] == "Original"
+    assert payload["story_artifact"]["objects"][0]["name"] == "Honey Pot"
+    assert payload["story_artifact"]["opening"] == "It was a sunny morning."
+
+
+def test_story_item_update_and_delete(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "unused")
+
+    client = TestClient(create_app())
+    base_story = {
+        "title": "Original",
+        "description": "Original description with enough words to keep quality checks happy.",
+        "plot": ["A", "B", "C", "D", "E"],
+        "setting": "Hundred Acre Wood",
+        "style": "whimsical",
+        "tags": ["adventure"],
+        "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
+        "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
+        "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
+        "opening": "It was a sunny morning.",
+        "examples": [{"label": "sample", "text": "sample text"}],
+    }
+
+    update_res = client.post(
+        "/api/story-item",
+        json={
+            "raw_idea": "pooh vegas",
+            "section": "objects",
+            "operation": "update",
+            "item_index": 0,
+            "item": {"name": "Silver Keycard", "description": "Casino access", "tags": ["key"]},
+            "state": {"story_artifact": base_story},
+        },
+    )
+    assert update_res.status_code == 200
+    updated = update_res.json()["story_artifact"]
+    assert updated["objects"][0]["name"] == "Silver Keycard"
+
+    delete_res = client.post(
+        "/api/story-item",
+        json={
+            "raw_idea": "pooh vegas",
+            "section": "objects",
+            "operation": "delete",
+            "item_index": 0,
+            "state": {"story_artifact": updated},
+        },
+    )
+    assert delete_res.status_code == 200
+    deleted = delete_res.json()["story_artifact"]
+    assert deleted["objects"] == []
+
+
+def test_story_item_prompt_generation(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "detailed concept art, cinematic lighting")
+
+    client = TestClient(create_app())
+    base_story = {
+        "title": "Original",
+        "description": "Original description with enough words to keep quality checks happy.",
+        "plot": ["A", "B", "C", "D", "E"],
+        "setting": "Hundred Acre Wood",
+        "style": "whimsical",
+        "tags": ["adventure"],
+        "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
+        "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
+        "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
+        "opening": "It was a sunny morning.",
+        "examples": [{"label": "sample", "text": "sample text"}],
+    }
+
+    prompt_res = client.post(
+        "/api/story-item",
+        json={
+            "raw_idea": "pooh vegas",
+            "section": "objects",
+            "operation": "image",
+            "mode": "prompt",
+            "item_index": 0,
+            "state": {"story_artifact": base_story},
+        },
+    )
+    assert prompt_res.status_code == 200
+    updated_item = prompt_res.json()["story_artifact"]["objects"][0]
+    assert "cinematic lighting" in updated_item["image_prompt"]
+
+
+def test_story_item_image_mode_returns_image_name(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "_assert_sd_available", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        run_routes,
+        "_render_sd_image",
+        lambda *args, **kwargs: ("G:/lorebook/outputs/images/test-image.png", "data:image/png;base64,AAAA", "styled", "balanced"),
+    )
+
+    client = TestClient(create_app())
+    base_story = {
+        "title": "Original",
+        "description": "Original description with enough words to keep quality checks happy.",
+        "plot": ["A", "B", "C", "D", "E"],
+        "setting": "Hundred Acre Wood",
+        "style": "whimsical",
+        "tags": ["adventure"],
+        "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
+        "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
+        "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
+        "opening": "It was a sunny morning.",
+        "examples": [{"label": "sample", "text": "sample text"}],
+    }
+
+    image_res = client.post(
+        "/api/story-item",
+        json={
+            "raw_idea": "pooh vegas",
+            "section": "objects",
+            "operation": "image",
+            "mode": "full",
+            "item_index": 0,
+            "state": {"story_artifact": base_story},
+        },
+    )
+    assert image_res.status_code == 200
+    updated_item = image_res.json()["story_artifact"]["objects"][0]
+    assert updated_item["image_name"] == "test-image.png"
+    assert updated_item["image_data"].startswith("data:image/png;base64,")
+    assert "image_path" not in updated_item
+
+
+def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: (
+            "Sure, here's the payload:\n"
+            "```json\n"
+            '{"title":"Fenced","description":"A full fenced JSON payload with sufficient words for direct parsing.",'
+            '"plot":["A","B","C","D","E"],'
+            '"setting":"Cloud city","style":"adventure","tags":["sky"],'
+            '"characters_artifact":[],"locations":[],"objects":[],"opening":"Open.","examples":[]}'
+            "\n```"
+        ),
+    )
+
+    client = TestClient(create_app())
+    res = client.post("/api/story", json={"raw_idea": "fenced prompt"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["story_artifact"]["title"] == "Fenced"
+    assert payload["generation_quality"] == "full"
+
+
+def test_story_endpoint_recovers_embedded_story_json_in_description(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    embedded = {
+        "title": "Recovered",
+        "description": "Recovered description with enough words to satisfy the quality gate directly.",
+        "plot": ["A", "B", "C", "D", "E"],
+        "setting": "Recovered setting",
+        "style": "mythic",
+        "tags": ["recovered"],
+        "characters_artifact": [],
+        "locations": [],
+        "objects": [],
+        "opening": "Recovered opening.",
+        "examples": [],
+    }
+
+    malformed_outer = {
+        "title": "Outer",
+        "description": json.dumps(embedded),
+        "plot": [json.dumps(embedded)[:120]],
+        "setting": "",
+        "style": "",
+        "tags": [],
+        "characters_artifact": [],
+        "locations": [],
+        "objects": [],
+        "opening": "",
+        "examples": [],
+    }
+
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: json.dumps(malformed_outer))
+
+    client = TestClient(create_app())
+    res = client.post("/api/story", json={"raw_idea": "embedded json prompt"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["story_artifact"]["title"] == "Recovered"
+    assert payload["story_artifact"]["opening"] == "Recovered opening."
+    assert payload["story_artifact"]["style"] == "mythic"
+    assert payload["generation_quality"] == "full"
 
 
 def test_character_endpoint_returns_single_character(monkeypatch) -> None:

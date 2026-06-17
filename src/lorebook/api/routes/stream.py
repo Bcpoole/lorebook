@@ -45,7 +45,8 @@ def _editor_prompt(state: WizardState) -> str:
         name = character.get("name") or f"Companion {index}"
         details = character.get("details", "")
         sections.append(f"Character {index} - {name}:\n{details}")
-    return f"Setting:\n{state['world_setting']}\n\nCharacters:\n{'\n\n'.join(sections)}"
+    characters_block = "\n\n".join(sections)
+    return f"Setting:\n{state['world_setting']}\n\nCharacters:\n{characters_block}"
 
 
 def _tokens(env_var: str, default: int) -> int:

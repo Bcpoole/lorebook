@@ -31,6 +31,15 @@ from lorebook.llm import call_local_llm, is_local_llm_available, stream_local_ll
 from lorebook.state import CharacterState, StoryArtifact, WizardState
 
 router = APIRouter()
+_STORY_ACTIONS = {
+    "generate",
+    "suggest_next_beat",
+    "rewrite_opening",
+    "add_character",
+    "add_location",
+    "add_object",
+    "add_example",
+}
 
 
 def _tokens(env_var: str, default: int) -> int:
@@ -189,6 +198,12 @@ def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
     if not isinstance(value, dict):
         return None
 
+    description_candidate = str(value.get("description") or "").strip()
+    if description_candidate.startswith("{"):
+        embedded = _extract_first_json_block(description_candidate)
+        if isinstance(embedded, dict):
+            value = embedded
+
     def _as_string_list(raw: Any) -> list[str]:
         if not isinstance(raw, list):
             return []
@@ -228,21 +243,36 @@ def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
                 item["text"] = text
             if tags:
                 item["tags"] = tags
+            for image_key in (
+                "image_name",
+                "image_path",
+                "image_data",
+                "image_prompt",
+                "image_prompt_styled",
+                "image_style",
+                "image_file",
+            ):
+                image_value = str(entry.get(image_key) or "").strip()
+                if image_value:
+                    item[image_key] = image_value
             if item:
                 output.append(item)
         return output
 
-    description = str(value.get("description") or "").strip()
-    description_words = description.split()
-    if len(description_words) > 128:
-        description = " ".join(description_words[:128])
+    description = _trim_words(str(value.get("description") or "").strip(), 128)
+    plot = _as_string_list(value.get("plot"))
+    if not plot and description:
+        plot = [_trim_words(description, 24)]
+    style = str(value.get("style") or "").strip()
+    if not style:
+        style = "neutral"
 
     artifact: StoryArtifact = {
         "title": str(value.get("title") or "Untitled Story").strip(),
         "description": description,
-        "plot": _as_string_list(value.get("plot")),
+        "plot": plot,
         "setting": str(value.get("setting") or "").strip(),
-        "style": str(value.get("style") or "").strip(),
+        "style": style,
         "tags": _as_string_list(value.get("tags")),
         "characters_artifact": _as_entity_list(value.get("characters_artifact")),
         "locations": _as_entity_list(value.get("locations")),
@@ -251,6 +281,17 @@ def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
         "examples": _as_entity_list(value.get("examples")),
     }
     return artifact
+
+
+def _coerce_story_setup(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    setup: dict[str, str] = {}
+    for key in ("protagonist", "opening_preference", "output_format", "tone", "length_target"):
+        candidate = str(value.get(key) or "").strip()
+        if candidate:
+            setup[key] = candidate
+    return setup
 
 
 def _normalize_state(raw_idea: str, state: Dict[str, Any] | None = None) -> WizardState:
@@ -265,6 +306,12 @@ def _normalize_state(raw_idea: str, state: Dict[str, Any] | None = None) -> Wiza
     story_artifact = _coerce_story_artifact(incoming.get("story_artifact"))
     if story_artifact:
         normalized["story_artifact"] = story_artifact
+    story_setup = _coerce_story_setup(incoming.get("story_setup"))
+    if story_setup:
+        normalized["story_setup"] = story_setup
+    story_instruction = str(incoming.get("story_instruction") or "").strip()
+    if story_instruction:
+        normalized["story_instruction"] = story_instruction
     return normalized
 
 
@@ -439,20 +486,405 @@ def _extract_first_json_block(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
 
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start < 0 or end <= start:
-        return None
-    try:
-        loaded = json.loads(stripped[start : end + 1])
-        if isinstance(loaded, dict):
-            return loaded
-    except json.JSONDecodeError:
-        return None
+    fenced = re.findall(r"```(?:json)?\s*([\s\S]*?)```", stripped, re.IGNORECASE)
+    for candidate in fenced:
+        candidate_text = candidate.strip()
+        if not candidate_text.startswith("{"):
+            continue
+        try:
+            loaded = json.loads(candidate_text)
+            if isinstance(loaded, dict):
+                return loaded
+        except json.JSONDecodeError:
+            continue
+
+    in_string = False
+    escaped = False
+    depth = 0
+    start_idx = -1
+    for idx, char in enumerate(stripped):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            if depth == 0:
+                start_idx = idx
+            depth += 1
+        elif char == "}":
+            if depth == 0:
+                continue
+            depth -= 1
+            if depth == 0 and start_idx >= 0:
+                candidate_text = stripped[start_idx : idx + 1]
+                try:
+                    loaded = json.loads(candidate_text)
+                    if isinstance(loaded, dict):
+                        return loaded
+                except json.JSONDecodeError:
+                    continue
     return None
 
 
-def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200) -> StoryArtifact:
+def _story_action_directive(action: str) -> str:
+    if action == "suggest_next_beat":
+        return "Add 1-2 compelling next plot beats to continue the story while preserving existing beats."
+    if action == "rewrite_opening":
+        return "Rewrite only the opening into stronger prose while preserving story continuity."
+    if action == "add_character":
+        return "Add one meaningful character to characters_artifact and reflect them where needed."
+    if action == "add_location":
+        return "Add one meaningful location to locations and reflect it where needed."
+    if action == "add_object":
+        return "Add one meaningful story object to objects and connect it to the story tension."
+    if action == "add_example":
+        return "Add one concise example snippet to examples with label and text."
+    return "Generate a complete story artifact from scratch."
+
+
+def _story_action_target_field(action: str) -> str:
+    if action == "suggest_next_beat":
+        return "plot"
+    if action == "rewrite_opening":
+        return "opening"
+    if action == "add_character":
+        return "characters_artifact"
+    if action == "add_location":
+        return "locations"
+    if action == "add_object":
+        return "objects"
+    if action == "add_example":
+        return "examples"
+    return "plot"
+
+
+def _story_action_schema(action: str) -> str:
+    if action == "suggest_next_beat":
+        return '{"plot":["new beat"]}'
+    if action == "rewrite_opening":
+        return '{"opening":"updated opening text"}'
+    if action == "add_character":
+        return '{"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}]}'
+    if action == "add_location":
+        return '{"locations":[{"name":"","description":"","tags":[""]}]}'
+    if action == "add_object":
+        return '{"objects":[{"name":"","description":"","tags":[""]}]}'
+    if action == "add_example":
+        return '{"examples":[{"label":"","text":""}]}'
+    return '{"plot":["new beat"]}'
+
+
+def _coerce_story_action_update(action: str, value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+
+    target = _story_action_target_field(action)
+    candidate = value
+    if target not in candidate:
+        full = _coerce_story_artifact(candidate)
+        if not full:
+            return None
+        candidate = {target: full.get(target)}
+
+    shell: dict[str, Any] = {
+        "title": "tmp",
+        "description": "tmp",
+        "plot": [],
+        "setting": "",
+        "style": "",
+        "tags": [],
+        "characters_artifact": [],
+        "locations": [],
+        "objects": [],
+        "opening": "",
+        "examples": [],
+    }
+    shell[target] = candidate.get(target)
+    artifact = _coerce_story_artifact(shell)
+    if not artifact:
+        return None
+    return artifact.get(target)
+
+
+def _merge_story_action_update(existing_artifact: StoryArtifact, action: str, update: Any) -> StoryArtifact:
+    merged: StoryArtifact = {
+        **existing_artifact,
+        "plot": list(existing_artifact.get("plot", [])),
+        "characters_artifact": list(existing_artifact.get("characters_artifact", [])),
+        "locations": list(existing_artifact.get("locations", [])),
+        "objects": list(existing_artifact.get("objects", [])),
+        "examples": list(existing_artifact.get("examples", [])),
+    }
+    if action == "rewrite_opening":
+        if isinstance(update, str) and update.strip():
+            merged["opening"] = update.strip()
+        return merged
+
+    if action == "suggest_next_beat":
+        if not isinstance(update, list):
+            return merged
+        existing_plot = list(merged.get("plot", []))
+        seen = {item.strip().lower() for item in existing_plot if isinstance(item, str)}
+        for beat in update:
+            text = str(beat).strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            existing_plot.append(text)
+            seen.add(key)
+        merged["plot"] = existing_plot
+        return merged
+
+    if action in {"add_character", "add_location", "add_object"}:
+        if not isinstance(update, list):
+            return merged
+        target = _story_action_target_field(action)
+        current_items = list(merged.get(target, []))
+        seen = {str(item.get("name", "")).strip().lower() for item in current_items if isinstance(item, dict)}
+        for item in update:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            current_items.append(item)
+            seen.add(key)
+        merged[target] = current_items
+        return merged
+
+    if action == "add_example":
+        if not isinstance(update, list):
+            return merged
+        current_items = list(merged.get("examples", []))
+        seen = {
+            f"{str(item.get('label', '')).strip().lower()}|{str(item.get('text', '')).strip().lower()}"
+            for item in current_items
+            if isinstance(item, dict)
+        }
+        for item in update:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            text = str(item.get("text") or "").strip()
+            if not label and not text:
+                continue
+            key = f"{label.lower()}|{text.lower()}"
+            if key in seen:
+                continue
+            current_items.append({"label": label or "example", "text": text})
+            seen.add(key)
+        merged["examples"] = current_items
+        return merged
+
+    return merged
+
+
+def _build_story_action_update(
+    raw_idea: str,
+    max_length: int,
+    story_setup: dict[str, str],
+    instruction: str,
+    action: str,
+    existing_artifact: StoryArtifact,
+) -> tuple[Any, str]:
+    setup_block = _story_setup_prompt(story_setup)
+    instruction_block = f"\nInstruction:\n{instruction}" if instruction else ""
+    target = _story_action_target_field(action)
+    compact_context = {
+        "title": existing_artifact.get("title", ""),
+        "description": existing_artifact.get("description", ""),
+        "setting": existing_artifact.get("setting", ""),
+        "style": existing_artifact.get("style", ""),
+        "plot": existing_artifact.get("plot", [])[-6:],
+        target: existing_artifact.get(target),
+    }
+    system_prompt = (
+        "You update a specific section of a story artifact. Return ONLY valid JSON that matches this schema: "
+        f"{_story_action_schema(action)}. "
+        "Do not return markdown fences or commentary."
+    )
+    prompt = (
+        f"Story idea:\n{raw_idea}\n\n"
+        f"{setup_block}\n"
+        f"{instruction_block}\n\n"
+        f"Current context JSON:\n{json.dumps(compact_context, ensure_ascii=False)}\n\n"
+        f"Task:\n{_story_action_directive(action)}"
+    ).strip()
+    generated = call_local_llm(system_prompt, prompt, max_length=max_length)
+    loaded = _extract_first_json_block(generated)
+    quality = "full"
+    update = _coerce_story_action_update(action, loaded) if loaded else None
+
+    if update is None:
+        repaired = _repair_story_response(
+            generated,
+            raw_idea=raw_idea,
+            story_setup=story_setup,
+            instruction=instruction,
+            action=action,
+            max_length=max_length,
+        )
+        if repaired is not None:
+            loaded = repaired
+            update = _coerce_story_action_update(action, repaired)
+            quality = "repaired"
+
+    if update is None:
+        quality = "fallback"
+        if action == "rewrite_opening":
+            return "", quality
+        if action == "suggest_next_beat":
+            return [], quality
+        return [], quality
+    return update, quality
+
+
+_STORY_ITEM_SECTIONS = {"characters_artifact", "locations", "objects", "examples"}
+
+
+def _coerce_story_list_item(section: str, value: Any) -> dict[str, Any] | None:
+    if section not in _STORY_ITEM_SECTIONS or not isinstance(value, dict):
+        return None
+    shell = {
+        "title": "tmp",
+        "description": "tmp",
+        "plot": [],
+        "setting": "",
+        "style": "neutral",
+        "tags": [],
+        "characters_artifact": [],
+        "locations": [],
+        "objects": [],
+        "opening": "",
+        "examples": [],
+    }
+    shell[section] = [value]
+    artifact = _coerce_story_artifact(shell)
+    if not artifact:
+        return None
+    section_items = artifact.get(section, [])
+    if not isinstance(section_items, list) or not section_items:
+        return None
+    first = section_items[0]
+    return first if isinstance(first, dict) else None
+
+
+def _story_item_sd_prompt(raw_idea: str, artifact: StoryArtifact, section: str, item: dict[str, Any], persona_id: str = "blank") -> str:
+    if section == "examples":
+        item_title = str(item.get("label") or "example snippet")
+        item_details = str(item.get("text") or "")
+    elif section == "characters_artifact":
+        item_title = str(item.get("name") or "character")
+        item_details = str(item.get("summary") or item.get("role") or "")
+    else:
+        item_title = str(item.get("name") or section.replace("_", " "))
+        item_details = str(item.get("description") or "")
+    prompt_input = (
+        f"Story idea:\n{raw_idea}\n\n"
+        f"Story title: {artifact.get('title', '')}\n"
+        f"Story setting: {artifact.get('setting', '')}\n"
+        f"Story tone/style: {artifact.get('style', '')}\n"
+        f"Section: {section}\n"
+        f"Item name/label: {item_title}\n"
+        f"Item details:\n{item_details}\n"
+    )
+    generated = call_local_llm(get_persona_prompts(persona_id).SD_PROMPT_SYSTEM, prompt_input, max_length=256)
+    return generated.strip().replace("\n", " ")
+
+
+def _story_setup_prompt(story_setup: dict[str, str]) -> str:
+    if not story_setup:
+        return ""
+    lines = ["Story setup preferences:"]
+    label_map = {
+        "protagonist": "Protagonist",
+        "opening_preference": "Opening preference",
+        "output_format": "Output format",
+        "tone": "Tone",
+        "length_target": "Length target",
+    }
+    for key in ("protagonist", "opening_preference", "output_format", "tone", "length_target"):
+        value = story_setup.get(key, "").strip()
+        if value:
+            lines.append(f"- {label_map[key]}: {value}")
+    return "\n".join(lines)
+
+
+def _story_is_underfilled(artifact: StoryArtifact) -> bool:
+    description_words = len(str(artifact.get("description", "")).split())
+    plot_count = len(artifact.get("plot", []))
+    return description_words < 8 or plot_count < 3
+
+
+def _repair_story_response(
+    raw_response: str,
+    raw_idea: str,
+    story_setup: dict[str, str],
+    instruction: str,
+    action: str,
+    max_length: int,
+) -> dict[str, Any] | None:
+    setup_block = _story_setup_prompt(story_setup)
+    instruction_block = f"\nInstruction:\n{instruction}" if instruction else ""
+    repair_system = (
+        "You fix malformed or partial story JSON. "
+        "Return ONLY valid JSON object with schema: "
+        '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
+        '"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}], '
+        '"locations":[{"name":"","description":"","tags":[""]}], '
+        '"objects":[{"name":"","description":"","tags":[""]}], '
+        '"opening":"", "examples":[{"label":"","text":""}]}.'
+    )
+    repair_prompt = (
+        f"Idea:\n{raw_idea}\n\n"
+        f"Action: {action}\n"
+        f"{setup_block}\n"
+        f"{instruction_block}\n\n"
+        f"Malformed or partial output:\n{raw_response[:6000]}"
+    ).strip()
+    repaired = call_local_llm(repair_system, repair_prompt, max_length=max(600, min(max_length, 1400)))
+    return _extract_first_json_block(repaired)
+
+
+def _build_story_artifact(
+    raw_idea: str,
+    persona_id: str,
+    max_length: int = 1200,
+    story_setup: dict[str, str] | None = None,
+    instruction: str = "",
+    action: str = "generate",
+    existing_artifact: StoryArtifact | None = None,
+) -> tuple[StoryArtifact, str]:
+    action_value = action if action in _STORY_ACTIONS else "generate"
+    setup = story_setup or {}
+    if action_value != "generate" and existing_artifact is not None:
+        update, quality = _build_story_action_update(
+            raw_idea=raw_idea,
+            max_length=max_length,
+            story_setup=setup,
+            instruction=instruction,
+            action=action_value,
+            existing_artifact=existing_artifact,
+        )
+        merged = _merge_story_action_update(existing_artifact, action_value, update)
+        if not merged.get("style"):
+            merged["style"] = setup.get("tone") or persona_id
+        return merged, quality
+
+    setup_block = _story_setup_prompt(setup)
+    instruction_block = f"\nInstruction:\n{instruction}" if instruction else ""
     system_prompt = (
         "You are a story architect. Return ONLY valid JSON with this schema: "
         '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
@@ -460,18 +892,56 @@ def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200
         '"locations":[{"name":"","description":"","tags":[""]}], '
         '"objects":[{"name":"","description":"","tags":[""]}], '
         '"opening":"", "examples":[{"label":"","text":""}]}. '
-        "Use concise language. description must be 128 words max."
+        "Use concise language. description must be 128 words max. "
+        "Provide 5-8 plot beats. Do not include markdown or commentary."
     )
-    generated = call_local_llm(system_prompt, raw_idea, max_length=max_length)
+    if action_value == "generate" or existing_artifact is None:
+        user_prompt = (
+            f"Story idea:\n{raw_idea}\n\n"
+            f"{setup_block}\n"
+            f"{instruction_block}\n\n"
+            "Generate a complete story artifact."
+        ).strip()
+    else:
+        user_prompt = (
+            f"Story idea:\n{raw_idea}\n\n"
+            f"{setup_block}\n"
+            f"{instruction_block}\n\n"
+            f"Current artifact JSON:\n{json.dumps(existing_artifact, ensure_ascii=False)}\n\n"
+            f"Task:\n{_story_action_directive(action_value)}\n"
+            "Return the full updated artifact."
+        ).strip()
+
+    generated = call_local_llm(system_prompt, user_prompt, max_length=max_length)
     loaded = _extract_first_json_block(generated)
+    generation_quality = "full"
+    underfilled = False
+    if loaded is not None:
+        tentative = _coerce_story_artifact(loaded)
+        underfilled = tentative is None or _story_is_underfilled(tentative)
+
+    if loaded is None or underfilled:
+        repaired = _repair_story_response(
+            generated,
+            raw_idea=raw_idea,
+            story_setup=setup,
+            instruction=instruction,
+            action=action_value,
+            max_length=max_length,
+        )
+        if repaired is not None:
+            loaded = repaired
+            generation_quality = "repaired"
+
     if loaded is None:
+        generation_quality = "fallback"
         loaded = {
             "title": raw_idea[:80] or "Untitled Story",
-            "description": generated[:800],
-            "plot": [generated[:220]],
+            "description": _trim_words(generated[:1000], 128),
+            "plot": [_trim_words(generated[:280], 24), "Conflict escalates.", "A turning point changes everything."],
             "setting": "",
-            "style": "neutral",
-            "tags": [],
+            "style": setup.get("tone") or persona_id or "neutral",
+            "tags": [tag for tag in [setup.get("output_format", ""), setup.get("tone", "")] if tag],
             "characters_artifact": [],
             "locations": [],
             "objects": [],
@@ -483,8 +953,8 @@ def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200
     if artifact is None:
         raise HTTPException(status_code=500, detail="Failed to parse generated story artifact")
     if not artifact["style"]:
-        artifact["style"] = persona_id
-    return artifact
+        artifact["style"] = setup.get("tone") or persona_id
+    return artifact, generation_quality
 
 
 def _generate_character_only(raw_idea: str, persona_id: str, max_length: int = 700) -> CharacterState:
@@ -966,19 +1436,150 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
     persona_id: str = str(body.get("persona_id", "blank"))
     experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
     max_length = int(experimentation_config.get("maxLength", 1200))
-
-    artifact = _build_story_artifact(raw_idea, persona_id=persona_id, max_length=max_length)
     state = _normalize_state(raw_idea, body.get("state"))
+    story_setup = _coerce_story_setup(body.get("story_setup") or state.get("story_setup"))
+    instruction = str(body.get("instruction") or state.get("story_instruction") or "").strip()
+    action = str(body.get("action") or "generate").strip().lower()
+    if action not in _STORY_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported story action: {action}")
+
+    existing_artifact = state.get("story_artifact") if isinstance(state.get("story_artifact"), dict) else None
+    artifact, generation_quality = _build_story_artifact(
+        raw_idea,
+        persona_id=persona_id,
+        max_length=max_length,
+        story_setup=story_setup,
+        instruction=instruction,
+        action=action,
+        existing_artifact=_coerce_story_artifact(existing_artifact),
+    )
     state["story_artifact"] = artifact
+    if story_setup:
+        state["story_setup"] = story_setup
+    if instruction:
+        state["story_instruction"] = instruction
 
     payload = {
         "raw_idea": raw_idea,
         "state": state,
-        "meta": {"mode": "story"},
+        "meta": {"mode": "story", "story_generation_quality": generation_quality, "story_action": action},
         "save_pending": bool(body.get("save_pending", False)),
     }
     save_draft_state(payload, "latest", artifact_type="story")
-    return {"state": state, "story_artifact": artifact}
+    return {
+        "state": state,
+        "story_artifact": artifact,
+        "generation_quality": generation_quality,
+        "story_setup": story_setup,
+        "story_instruction": instruction,
+        "action": action,
+    }
+
+
+@router.post("/story-item")
+async def update_story_item(body: Dict[str, Any]) -> Dict[str, Any]:
+    raw_idea: str = str(body.get("raw_idea") or "").strip()
+    section = str(body.get("section") or "").strip().lower()
+    operation = str(body.get("operation") or "update").strip().lower()
+    item_index = int(body.get("item_index", -1))
+    mode = str(body.get("mode", "full")).strip().lower()
+    prompt_override = str(body.get("prompt_override") or "").strip()
+    style_name = str(body.get("style", "")).strip().lower() or None
+    sd_config = body.get("sd_config") if isinstance(body.get("sd_config"), dict) else {}
+    persona_id = str(body.get("persona_id", "blank"))
+
+    if section not in _STORY_ITEM_SECTIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported story section: {section}")
+    if operation not in {"update", "delete", "image"}:
+        raise HTTPException(status_code=400, detail="operation must be one of: update, delete, image")
+    if operation == "image" and mode not in {"full", "prompt", "image"}:
+        raise HTTPException(status_code=400, detail="mode must be one of: full, prompt, image")
+
+    state = _normalize_state(raw_idea, body.get("state"))
+    story = _coerce_story_artifact(state.get("story_artifact"))
+    if not story:
+        raise HTTPException(status_code=400, detail="story_artifact is required")
+
+    section_items = story.get(section, [])
+    if not isinstance(section_items, list):
+        section_items = []
+
+    if operation == "delete":
+        if item_index < 0 or item_index >= len(section_items):
+            raise HTTPException(status_code=400, detail="item_index is out of range")
+        section_items.pop(item_index)
+        story[section] = section_items
+    elif operation == "update":
+        if item_index < 0 or item_index >= len(section_items):
+            raise HTTPException(status_code=400, detail="item_index is out of range")
+        updated_item = _coerce_story_list_item(section, body.get("item"))
+        if not updated_item:
+            raise HTTPException(status_code=400, detail="Invalid story item payload")
+        section_items[item_index] = updated_item
+        story[section] = section_items
+    else:
+        if item_index < 0 or item_index >= len(section_items):
+            raise HTTPException(status_code=400, detail="item_index is out of range")
+        current_item = section_items[item_index]
+        if not isinstance(current_item, dict):
+            raise HTTPException(status_code=400, detail="Target story item is invalid")
+
+        if mode == "prompt":
+            prompt = prompt_override or _story_item_sd_prompt(raw_idea, story, section, current_item, persona_id=persona_id)
+            updated_item = {**current_item, "image_prompt": prompt}
+        else:
+            _assert_sd_available(sd_config.get("endpoint") if isinstance(sd_config, dict) else None)
+            if mode == "image":
+                prompt = prompt_override or str(current_item.get("image_prompt") or "").strip()
+                if not prompt:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No existing image prompt found. Regenerate prompt first or provide prompt_override.",
+                    )
+            else:
+                prompt = prompt_override or _story_item_sd_prompt(raw_idea, story, section, current_item, persona_id=persona_id)
+            try:
+                image_path, image_data, styled_prompt, resolved_style = _render_sd_image(
+                    prompt,
+                    style_name=style_name,
+                    sd_config=sd_config,
+                )
+            except requests.RequestException as exc:
+                raise HTTPException(status_code=502, detail="Failed to render image from Stable Diffusion endpoint") from exc
+            except RuntimeError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            updated_item = {
+                **current_item,
+                "image_prompt": prompt,
+                "image_prompt_styled": styled_prompt,
+                "image_style": resolved_style,
+                "image_name": Path(image_path).name,
+                "image_data": image_data,
+            }
+
+        section_items[item_index] = updated_item
+        story[section] = section_items
+
+    state["story_artifact"] = story
+    save_draft_state(
+        {
+            "raw_idea": raw_idea,
+            "state": state,
+            "meta": {"mode": "story"},
+            "save_pending": bool(body.get("save_pending", False)),
+        },
+        "latest",
+        artifact_type="story",
+    )
+
+    return {
+        "state": state,
+        "story_artifact": story,
+        "section": section,
+        "operation": operation,
+        "item_index": item_index,
+        "item": section_items[item_index] if 0 <= item_index < len(section_items) else None,
+    }
 
 
 @router.post("/character")

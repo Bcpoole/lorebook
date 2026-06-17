@@ -42,9 +42,10 @@ def editor_node(state: WizardState) -> Dict[str, str | bool]:
         name = character.get("name") or f"Companion {index}"
         details = character.get("details", "")
         character_sections.append(f"Character {index} - {name}:\n{details}")
+    characters_block = "\n\n".join(character_sections)
     prompt = (
         f"Setting:\n{state['world_setting']}\n\n"
-        f"Characters:\n{'\n\n'.join(character_sections)}"
+        f"Characters:\n{characters_block}"
     )
     result = call_local_llm(system_prompt, prompt)
 

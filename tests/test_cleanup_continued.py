@@ -1,6 +1,5 @@
 """Test output cleanup for continued generation."""
 
-import pytest
 from lorebook.api.routes.run import _clean_continued_output
 
 
