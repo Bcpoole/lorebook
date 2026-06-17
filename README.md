@@ -101,7 +101,7 @@ Set-Location ..
 
 ## API Endpoints
 
-- `POST /api/run` - blocking workflow run, saves JSON output to `outputs/runs/`
+- `POST /api/run` - blocking workflow run, saves JSON output to `outputs/world/`
 - `POST /api/story` - generate structured Story artifact fields (`title`, `description`, `plot`, `locations`, `objects`, etc.)
 - `POST /api/character` - generate one standalone character payload
 - `GET /api/gallery` - list saved run previews with search/tag filtering
@@ -111,7 +111,7 @@ Set-Location ..
 
 ## Saved Output
 
-Blocking runs save JSON artifacts under `outputs/runs/` and the UI shows the saved run id and path after each run.
+Saved artifacts are organized by type and item folder: world runs under `outputs/world/<artifact_id>/artifact.json`, character artifacts under `outputs/character/<artifact_id>/artifact.json`, and story artifacts under `outputs/story/<artifact_id>/artifact.json`. Character images are written alongside their artifact JSON in the same item folder. Drafts are stored per type under each folder's `_drafts/` subdirectory.
 
 ## Offline Fixture Testing
 

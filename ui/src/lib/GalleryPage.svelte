@@ -80,8 +80,12 @@
     }
   }
 
-  async function openRun(runId) {
-    selectedItem = items.find((i) => i.run_id === runId) ?? null
+  async function openRun(itemOrRunId) {
+    const targetItem = typeof itemOrRunId === 'object' && itemOrRunId
+      ? itemOrRunId
+      : items.find((i) => i.run_id === itemOrRunId) ?? null
+    const runId = targetItem?.run_id ?? String(itemOrRunId || '')
+    selectedItem = targetItem
     selected = null
     selectedCharacterId = ''
     flipped = false
@@ -91,7 +95,10 @@
     navForward = []
     modalLoading = true
     try {
-      const res = await fetch(`/api/runs/${runId}`)
+      const params = new URLSearchParams()
+      if (targetItem?.artifact_type) params.set('artifact_type', targetItem.artifact_type)
+      const suffix = params.toString() ? `?${params}` : ''
+      const res = await fetch(`/api/runs/${runId}${suffix}`)
       if (!res.ok) return
       selected = await res.json()
       selectedCharacterId = selected?.state?.characters?.[0]?.id ?? ''
@@ -110,7 +117,10 @@
       if (selected?.run_id === targetEntry.run_id) {
         selectedCharacterId = targetEntry.character_id || selectedCharacterId
       } else {
-        const res = await fetch(`/api/runs/${targetEntry.run_id}`)
+        const params = new URLSearchParams()
+        if (targetEntry?.artifact_type) params.set('artifact_type', targetEntry.artifact_type)
+        const suffix = params.toString() ? `?${params}` : ''
+        const res = await fetch(`/api/runs/${targetEntry.run_id}${suffix}`)
         if (!res.ok) return
         selected = await res.json()
         selectedItem = items.find((i) => i.run_id === targetEntry.run_id) ?? selectedItem
@@ -134,11 +144,19 @@
   }
 
   async function toggleFavorite(runId) {
-    const res = await fetch(`/api/gallery/${runId}/favorite`, { method: 'POST' })
+    const item = items.find((entry) => entry.run_id === runId) ?? selectedItem
+    const params = new URLSearchParams()
+    if (item?.artifact_type) params.set('artifact_type', item.artifact_type)
+    const suffix = params.toString() ? `?${params}` : ''
+    const res = await fetch(`/api/gallery/${runId}/favorite${suffix}`, { method: 'POST' })
     if (!res.ok) return
     const payload = await res.json()
-    items = items.map((i) => (i.run_id === runId ? { ...i, favorite: payload.favorite } : i))
-    if (selectedItem?.run_id === runId) {
+    items = items.map((i) => (
+      i.run_id === runId && (!item?.artifact_type || i.artifact_type === item.artifact_type)
+        ? { ...i, favorite: payload.favorite }
+        : i
+    ))
+    if (selectedItem?.run_id === runId && (!item?.artifact_type || selectedItem.artifact_type === item.artifact_type)) {
       selectedItem = { ...selectedItem, favorite: payload.favorite }
     }
   }
@@ -149,7 +167,12 @@
     const res = await fetch('/api/character-role', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_id: selected.run_id, character_index: index, role }),
+      body: JSON.stringify({
+        run_id: selected.run_id,
+        artifact_type: selected.artifact_type || selectedItem?.artifact_type || '',
+        character_index: index,
+        role,
+      }),
     })
     if (!res.ok) return
     const payload = await res.json()
@@ -171,6 +194,7 @@
     if (!selected || !currentCharacter) return null
     return {
       run_id: selected.run_id,
+      artifact_type: selected.artifact_type || selectedItem?.artifact_type || '',
       character_id: String(currentCharacter.id || ''),
       character_name: currentCharacter.name || 'Character',
     }
@@ -244,6 +268,7 @@
     if (localIndex >= 0) {
       return {
         run_id: selected?.run_id || '',
+        artifact_type: selected?.artifact_type || selectedItem?.artifact_type || '',
         character_index: localIndex,
         character: runCharacters[localIndex],
       }
@@ -280,6 +305,7 @@
     const newHistory = capNav([...navHistory, currentEntry])
     const targetEntry = {
       run_id: resolved.run_id,
+      artifact_type: resolved.artifact_type || '',
       character_id: target,
       character_name: resolved.character?.name || trimUrn(target),
     }

@@ -424,6 +424,35 @@
     return true
   }
 
+  function applyRestoredStoryDraft(payload) {
+    if (!payload?.state?.story_artifact) return false
+    storyPageState = {
+      ...storyPageState,
+      rawIdea: payload.raw_idea ?? '',
+      loading: false,
+      error: '',
+      story: payload.state.story_artifact,
+      savedName: '',
+    }
+    return true
+  }
+
+  function applyRestoredCharacterDraft(payload) {
+    if (!payload?.state) return false
+    characterPageState = {
+      ...characterPageState,
+      rawIdea: payload.raw_idea ?? '',
+      loading: false,
+      error: '',
+      workflowState: payload.state,
+      activeAgent: 'character_designer',
+      pendingSave: null,
+      savedRun: null,
+      savedName: '',
+    }
+    return true
+  }
+
   function showRestoreToast(message) {
     toastMessage = message
     toastVisible = true
@@ -730,9 +759,15 @@
       const res = await fetch('/api/restore-latest')
       if (!res.ok) return
       const data = await res.json()
-      if (!data?.draft) return
-
-      applyRestoredPayload(data.draft, 'draft')
+      if (data?.draft) {
+        applyRestoredPayload(data.draft, 'draft')
+      }
+      if (data?.story_draft) {
+        applyRestoredStoryDraft(data.story_draft)
+      }
+      if (data?.character_draft) {
+        applyRestoredCharacterDraft(data.character_draft)
+      }
     } catch {
       // Ignore restore failures.
     }

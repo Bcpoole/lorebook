@@ -20,7 +20,7 @@ from lorebook.api.storage import (
     delete_draft_state,
     find_character_by_urn,
     list_run_previews,
-    load_draft_state,
+    load_latest_drafts,
     load_run,
     save_draft_state,
     save_run_result,
@@ -43,10 +43,6 @@ def _tokens(env_var: str, default: int) -> int:
 LOREMASTER_MAX_TOKENS = _tokens("LOREBOOK_LOREMASTER_MAX_TOKENS", 2048)
 CHARACTER_MAX_TOKENS = _tokens("LOREBOOK_CHARACTER_MAX_TOKENS", 2048)
 EDITOR_MAX_TOKENS = _tokens("LOREBOOK_EDITOR_MAX_TOKENS", 512)
-WORLD_DRAFT_ID = "latest"
-STORY_DRAFT_ID = "story-latest"
-CHARACTER_DRAFT_ID = "character-latest"
-
 RELATIONSHIP_INVERSE_SYSTEM = (
     "You generate inverse relationship labels for character links. "
     "Given a relationship from source -> target, return only the inverse label from target -> source. "
@@ -717,7 +713,8 @@ async def _run_stage_stream(
                     "state": state,
                     "meta": {"elapsed_ms": elapsed_ms, "next_stage": next_stage, "stage": stage},
                     "save_pending": True,
-                }
+                },
+                artifact_type="world",
             )
             yield {
                 "event": "step-complete",
@@ -771,7 +768,8 @@ async def _run_stage_stream(
             "state": state,
             "meta": {"elapsed_ms": elapsed_ms, "next_stage": next_stage, "stage": stage},
             "save_pending": save_pending,
-        }
+        },
+        artifact_type="world",
     )
     yield {
         "event": "step-complete",
@@ -895,12 +893,11 @@ def _assert_sd_available(endpoint_override: str | None = None) -> None:
 
 @router.get("/restore-latest")
 async def restore_latest() -> Dict[str, Any]:
-    draft = load_draft_state(WORLD_DRAFT_ID)
-    mode = str((draft or {}).get("meta", {}).get("mode", "")).strip().lower()
-    if mode in {"story", "character"}:
-        draft = None
+    drafts = load_latest_drafts("latest")
     return {
-        "draft": draft,
+        "draft": drafts.get("world"),
+        "story_draft": drafts.get("story"),
+        "character_draft": drafts.get("character"),
     }
 
 
@@ -919,8 +916,8 @@ async def app_health() -> Dict[str, Any]:
 
 
 @router.get("/runs/{run_id}")
-async def get_run_by_id(run_id: str) -> Dict[str, Any]:
-    record = load_run(run_id)
+async def get_run_by_id(run_id: str, artifact_type: str = Query("")) -> Dict[str, Any]:
+    record = load_run(run_id, artifact_type=artifact_type or None)
     if not record:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     return record
@@ -952,9 +949,9 @@ async def list_gallery_runs(
 
 
 @router.post("/gallery/{run_id}/favorite")
-async def toggle_run_favorite(run_id: str) -> Dict[str, Any]:
+async def toggle_run_favorite(run_id: str, artifact_type: str = Query("")) -> Dict[str, Any]:
     """Toggle the favorite flag on a gallery run."""
-    record = toggle_favorite(run_id)
+    record = toggle_favorite(run_id, artifact_type=artifact_type or None)
     if not record:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     return {"ok": True, "run_id": run_id, "favorite": bool(record.get("favorite", False))}
@@ -980,7 +977,7 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"mode": "story"},
         "save_pending": bool(body.get("save_pending", False)),
     }
-    save_draft_state(payload, STORY_DRAFT_ID)
+    save_draft_state(payload, "latest", artifact_type="story")
     return {"state": state, "story_artifact": artifact}
 
 
@@ -1003,7 +1000,7 @@ async def generate_character_only(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"mode": "character"},
         "save_pending": bool(body.get("save_pending", False)),
     }
-    save_draft_state(payload, CHARACTER_DRAFT_ID)
+    save_draft_state(payload, "latest", artifact_type="character")
     return {"state": state, "character": character}
 
 
@@ -1012,12 +1009,13 @@ async def set_character_role(body: Dict[str, Any]) -> Dict[str, Any]:
     run_id = str(body.get("run_id") or "").strip()
     role = str(body.get("role") or "").strip().lower()
     character_index = int(body.get("character_index", 0))
+    artifact_type = str(body.get("artifact_type") or "").strip().lower()
     if not run_id:
         raise HTTPException(status_code=400, detail="run_id is required")
     if role not in {"character", "persona"}:
         raise HTTPException(status_code=400, detail="role must be character or persona")
 
-    updated = update_character_role(run_id, character_index, role)
+    updated = update_character_role(run_id, character_index, role, artifact_type=artifact_type or None)
     if not updated:
         raise HTTPException(status_code=404, detail="run or character not found")
     return {"ok": True, "run": updated}
@@ -1097,15 +1095,17 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
 
     save_draft_state(
         {"raw_idea": raw_idea, "state": state, "meta": {"mode": "character"}, "save_pending": True},
-        CHARACTER_DRAFT_ID,
+        "latest",
+        artifact_type="character",
     )
     return {"state": state, "character": new_character}
 
 
 @router.post("/draft")
 async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
+    artifact_type = str(body.get("artifact_type") or "world").strip().lower()
     if bool(body.get("clear", False)):
-        deleted = delete_draft_state(WORLD_DRAFT_ID)
+        deleted = delete_draft_state("latest", artifact_type=artifact_type)
         return {
             "ok": True,
             "cleared": True,
@@ -1118,7 +1118,7 @@ async def save_draft(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": body.get("meta", {}),
         "save_pending": bool(body.get("save_pending", False)),
     }
-    saved = save_draft_state(payload, WORLD_DRAFT_ID)
+    saved = save_draft_state(payload, "latest", artifact_type=artifact_type)
     return {
         **saved,
         "ok": True,
@@ -1192,7 +1192,8 @@ async def generate_character_image(body: Dict[str, Any]) -> Dict[str, Any]:
             "meta": body.get("meta", {}),
             "save_pending": bool(body.get("save_pending", False)),
         },
-        CHARACTER_DRAFT_ID,
+        "latest",
+        artifact_type="character",
     )
 
     return {
@@ -1247,7 +1248,7 @@ async def run_workflow(body: Dict[str, Any]) -> Dict[str, Any]:
         "meta": {"elapsed_ms": elapsed_ms},
     }
 
-    save_draft_state({**payload, "save_pending": not auto_save}, WORLD_DRAFT_ID)
+    save_draft_state({**payload, "save_pending": not auto_save}, "latest", artifact_type="world")
 
     if auto_save:
         saved = save_run_result(payload)
@@ -1307,7 +1308,8 @@ async def run_single_step(body: Dict[str, Any]) -> Dict[str, Any]:
             "meta": {"elapsed_ms": elapsed_ms, "next_stage": next_stage, "stage": stage},
             "save_pending": save_pending,
         },
-        WORLD_DRAFT_ID,
+        "latest",
+        artifact_type="world",
     )
 
     return response

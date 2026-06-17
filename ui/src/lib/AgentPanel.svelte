@@ -750,7 +750,7 @@
       {:else if pendingSave !== null}
         <div class="save-card">
           <h3 class="save-title">Save Assets</h3>
-          <p class="save-subtitle">Choose a filename and store this run in outputs/runs.</p>
+          <p class="save-subtitle">Choose a filename and store this run in outputs/world, outputs/character, or outputs/story.</p>
 
           <div class="save-form">
             <label class="field-label" for="filename-input">Filename</label>
