@@ -13,21 +13,28 @@ from lorebook.characters import infer_character_name, should_replace_character_n
 
 # Fields that are volatile / large and must never be written to disk for characters
 _CHAR_STRIP_KEYS = frozenset({"image_prompt", "image_prompt_styled", "image_style", "image_data"})
+_STORY_ENTITY_STRIP_KEYS = frozenset({"image_prompt", "image_prompt_styled", "image_style", "image_data"})
 # Rename image_path → image_file on disk
 _CHAR_RENAME_KEYS = {"image_path": "image_file"}
 # State-level keys to strip before saving to disk
 _STATE_STRIP_KEYS = frozenset({"critique_notes", "passed_inspection", "_lastNode"})
-ARTIFACT_TYPES = ("world", "character", "story")
+ARTIFACT_TYPES = ("world", "character", "story", "location", "object")
 DEFAULT_ARTIFACT_TYPE = "world"
 _SOURCE_TO_ARTIFACT = {
     "story": "story",
     "character": "character",
     "character-page": "character",
+    "location": "location",
+    "object": "object",
+    "location-page": "location",
+    "object-page": "object",
 }
 _MODE_TO_ARTIFACT = {
     "story": "story",
     "character": "character",
     "world": "world",
+    "location": "location",
+    "object": "object",
 }
 DRAFT_SNAPSHOT_ID = "snapshot"
 
@@ -496,6 +503,31 @@ def _read_source_image(raw_character: dict[str, Any], cleaned_character: dict[st
         return None
 
 
+def _read_story_entity_source_image(raw_entity: dict[str, Any], cleaned_entity: dict[str, Any]) -> tuple[bytes, str] | None:
+    data_uri = _decode_image_data_uri(str(raw_entity.get("image_data") or ""))
+    if data_uri is not None:
+        return data_uri
+
+    for key in ("image_path", "image_file", "image_name"):
+        source_path = _source_image_path(str(raw_entity.get(key) or ""))
+        if source_path is None:
+            continue
+        try:
+            return source_path.read_bytes(), source_path.suffix.lower() or ".png"
+        except OSError:
+            continue
+
+    for key in ("image_name", "image_file"):
+        source_path = _source_image_path(str(cleaned_entity.get(key) or ""))
+        if source_path is None:
+            continue
+        try:
+            return source_path.read_bytes(), source_path.suffix.lower() or ".png"
+        except OSError:
+            continue
+    return None
+
+
 def _materialize_character_images(
     raw_state: dict[str, Any],
     cleaned_state: dict[str, Any],
@@ -527,6 +559,45 @@ def _materialize_character_images(
         image_path = target_dir / image_name
         image_path.write_bytes(image_bytes)
         cleaned_character["image_file"] = image_name
+
+
+def _materialize_story_entity_images(
+    raw_state: dict[str, Any],
+    cleaned_state: dict[str, Any],
+    artifact_type: str,
+    run_id: str,
+) -> None:
+    raw_story = raw_state.get("story_artifact")
+    cleaned_story = cleaned_state.get("story_artifact")
+    if not isinstance(raw_story, dict) or not isinstance(cleaned_story, dict):
+        return
+
+    target_dir = _artifact_dir(run_id, artifact_type)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for section in ("characters_artifact", "locations", "objects"):
+        raw_items = raw_story.get(section)
+        cleaned_items = cleaned_story.get(section)
+        if not isinstance(raw_items, list) or not isinstance(cleaned_items, list):
+            continue
+
+        for index, raw_item in enumerate(raw_items):
+            if index >= len(cleaned_items):
+                break
+            cleaned_item = cleaned_items[index]
+            if not isinstance(raw_item, dict) or not isinstance(cleaned_item, dict):
+                continue
+
+            image_payload = _read_story_entity_source_image(raw_item, cleaned_item)
+            if image_payload is None:
+                cleaned_item.pop("image_name", None)
+                continue
+
+            image_bytes, extension = image_payload
+            safe_extension = extension if extension in {".png", ".jpg", ".jpeg", ".webp", ".gif"} else ".png"
+            image_name = f"{run_id}_{section}_{index + 1}{safe_extension}"
+            image_path = target_dir / image_name
+            image_path.write_bytes(image_bytes)
+            cleaned_item["image_name"] = image_name
 
 
 def _make_character_urn() -> str:
@@ -561,6 +632,33 @@ def _clean_character_for_disk(char: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _clean_story_entity_for_disk(entity: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in entity.items():
+        if key in _STORY_ENTITY_STRIP_KEYS:
+            continue
+        if key == "image_path":
+            out["image_name"] = value
+            continue
+        if key == "image_file":
+            out["image_name"] = value
+            continue
+        out[key] = value
+    return out
+
+
+def _clean_story_artifact_for_disk(story_artifact: dict[str, Any]) -> dict[str, Any]:
+    out = dict(story_artifact)
+    for section in ("characters_artifact", "locations", "objects"):
+        entries = out.get(section)
+        if isinstance(entries, list):
+            out[section] = [
+                _clean_story_entity_for_disk(entry) if isinstance(entry, dict) else entry
+                for entry in entries
+            ]
+    return out
+
+
 def _clean_state_for_disk(state: dict[str, Any]) -> dict[str, Any]:
     """Strip ephemeral state fields before writing to disk."""
     out = {k: v for k, v in state.items() if k not in _STATE_STRIP_KEYS}
@@ -570,6 +668,9 @@ def _clean_state_for_disk(state: dict[str, Any]) -> dict[str, Any]:
             _clean_character_for_disk(c) if isinstance(c, dict) else c
             for c in raw_chars
         ]
+    story_artifact = out.get("story_artifact")
+    if isinstance(story_artifact, dict):
+        out["story_artifact"] = _clean_story_artifact_for_disk(story_artifact)
     return out
 
 
@@ -612,37 +713,96 @@ def _preview_from_record(record: dict[str, Any]) -> dict[str, Any]:
 
     story_tags = _normalize_tags(story.get("tags"))
     character_tags: list[str] = []
-    # Use the first character for identity text, and first available image_data for avatar
     avatar_data = ""
     avatar_name = ""
     avatar_summary = ""
-    avatar_identity_selected = False
-    for character in characters:
-        if not isinstance(character, dict):
-            continue
-        if not avatar_identity_selected:
-            raw_name = str(character.get("name") or "")
-            if should_replace_character_name(raw_name):
-                raw_name = infer_character_name(str(character.get("details") or ""), fallback="")
-            avatar_name = raw_name
-            avatar_summary = str(character.get("summary") or "")
-            avatar_identity_selected = True
-        if not avatar_data:
-            # image_data is present in live state; image_file is on disk path
-            avatar_data = str(character.get("image_data") or "")
-            if not avatar_data and run_id:
-                avatar_data = _image_data_from_file(
-                    str(character.get("image_file") or ""),
-                    artifact_type=artifact_type,
-                    run_id=run_id,
-                )
-        character_tags.extend(_normalize_tags(character.get("tags")))
-    tags = list(dict.fromkeys([*story_tags, *character_tags]))
     roles = [
         str(character.get("role") or "character")
         for character in characters
         if isinstance(character, dict)
     ]
+
+    if artifact_type == "location":
+        locations = story.get("locations") if isinstance(story.get("locations"), list) else []
+        first_location = locations[0] if locations and isinstance(locations[0], dict) else {}
+        title = str(first_location.get("name") or title).strip() or title
+        description = _trim_words(
+            str(first_location.get("description") or first_location.get("summary") or description).strip(),
+            128,
+        )
+        avatar_name = str(first_location.get("name") or "").strip()
+        avatar_summary = str(first_location.get("summary") or first_location.get("description") or "").strip()
+        avatar_data = str(first_location.get("image_data") or "")
+        if not avatar_data and run_id:
+            avatar_data = _image_data_from_file(
+                str(first_location.get("image_name") or first_location.get("image_file") or ""),
+                artifact_type=artifact_type,
+                run_id=run_id,
+            )
+        tags = list(dict.fromkeys([*story_tags, *_normalize_tags(first_location.get("tags"))]))
+    elif artifact_type == "object":
+        objects = story.get("objects") if isinstance(story.get("objects"), list) else []
+        first_object = objects[0] if objects and isinstance(objects[0], dict) else {}
+        title = str(first_object.get("name") or title).strip() or title
+        description = _trim_words(
+            str(first_object.get("description") or first_object.get("summary") or description).strip(),
+            128,
+        )
+        avatar_name = str(first_object.get("name") or "").strip()
+        avatar_summary = str(first_object.get("summary") or first_object.get("description") or "").strip()
+        avatar_data = str(first_object.get("image_data") or "")
+        if not avatar_data and run_id:
+            avatar_data = _image_data_from_file(
+                str(first_object.get("image_name") or first_object.get("image_file") or ""),
+                artifact_type=artifact_type,
+                run_id=run_id,
+            )
+        tags = list(dict.fromkeys([*story_tags, *_normalize_tags(first_object.get("tags"))]))
+    else:
+        avatar_identity_selected = False
+        for character in characters:
+            if not isinstance(character, dict):
+                continue
+            if not avatar_identity_selected:
+                raw_name = str(character.get("name") or "")
+                if should_replace_character_name(raw_name):
+                    raw_name = infer_character_name(str(character.get("details") or ""), fallback="")
+                avatar_name = raw_name
+                avatar_summary = str(character.get("summary") or "")
+                avatar_identity_selected = True
+            if not avatar_data:
+                avatar_data = str(character.get("image_data") or "")
+                if not avatar_data and run_id:
+                    avatar_data = _image_data_from_file(
+                        str(character.get("image_file") or ""),
+                        artifact_type=artifact_type,
+                        run_id=run_id,
+                    )
+            character_tags.extend(_normalize_tags(character.get("tags")))
+
+        if not avatar_name and artifact_type == "character":
+            story_characters = story.get("characters_artifact") if isinstance(story.get("characters_artifact"), list) else []
+            first_story_character = (
+                story_characters[0]
+                if story_characters and isinstance(story_characters[0], dict)
+                else {}
+            )
+            avatar_name = str(first_story_character.get("name") or "").strip()
+            avatar_summary = str(first_story_character.get("summary") or "").strip()
+            if not avatar_data:
+                avatar_data = str(first_story_character.get("image_data") or "")
+                if not avatar_data and run_id:
+                    avatar_data = _image_data_from_file(
+                        str(first_story_character.get("image_name") or first_story_character.get("image_file") or ""),
+                        artifact_type=artifact_type,
+                        run_id=run_id,
+                    )
+            character_tags.extend(_normalize_tags(first_story_character.get("tags")))
+            if not roles:
+                role = str(first_story_character.get("role") or "character")
+                roles = [role]
+
+        tags = list(dict.fromkeys([*story_tags, *character_tags]))
 
     return {
         "run_id": str(record.get("run_id") or ""),
@@ -690,6 +850,7 @@ def save_run_result(
     _clear_artifact_dir(run_dir)
 
     _materialize_character_images(raw_state, clean_state, resolved_artifact_type, file_stem)
+    _materialize_story_entity_images(raw_state, clean_state, resolved_artifact_type, file_stem)
 
     record: dict[str, Any] = {
         "run_id": file_stem,
@@ -853,6 +1014,21 @@ def delete_draft_state(draft_id: str = "latest", artifact_type: str | None = Non
     return deleted
 
 
+def delete_artifact(artifact_id: str, artifact_type: str | None = None) -> bool:
+    """Delete an artifact folder and all its contents by ID."""
+    resolved_artifact_type = _normalize_artifact_type(artifact_type)
+    run_entry = _find_run_by_id(artifact_id, resolved_artifact_type)
+    if not run_entry:
+       return False
+    run_path, _ = run_entry
+    artifact_folder = run_path.parent
+    if artifact_folder.exists():
+       import shutil
+       shutil.rmtree(artifact_folder)
+       return True
+    return False
+
+
 def load_latest_drafts(draft_id: str = "latest") -> dict[str, dict[str, Any] | None]:
     return {artifact_type: load_draft_state(draft_id=draft_id, artifact_type=artifact_type) for artifact_type in ARTIFACT_TYPES}
 
@@ -861,11 +1037,13 @@ def list_run_previews(
     search: str = "",
     tag: str = "",
     favorites_only: bool = False,
+    artifact_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
     normalized_search = search.strip().lower()
     normalized_tag = tag.strip().lower()
+    normalized_artifact_type = _normalize_artifact_type(artifact_type) if artifact_type else ""
     entries: list[dict[str, Any]] = []
 
     for run_path, artifact_type in _iter_run_files():
@@ -882,6 +1060,8 @@ def list_run_previews(
             if changed:
                 record["state"] = repaired_state
         preview = _preview_from_record(record)
+        if normalized_artifact_type and preview.get("artifact_type") != normalized_artifact_type:
+            continue
         # Merge run-level favorite into preview (in case preview was built before favorite was set)
         preview["favorite"] = bool(record.get("favorite", preview.get("favorite", False)))
         if favorites_only and not preview.get("favorite"):

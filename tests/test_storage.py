@@ -118,11 +118,43 @@ def test_artifact_types_save_to_separate_paths(tmp_path: Path, monkeypatch) -> N
         {"raw_idea": "char idea", "state": {"characters": [{"name": "A", "details": "d"}]}, "meta": {"source": "character-page"}},
         filename="character_run",
     )
+    location_saved = storage.save_run_result(
+        {
+            "raw_idea": "location idea",
+            "state": {
+                "story_artifact": {
+                    "title": "Sky Dock",
+                    "description": "A floating dock.",
+                    "locations": [{"name": "Sky Dock", "description": "A floating dock."}],
+                }
+            },
+            "meta": {"source": "location"},
+        },
+        filename="location_run",
+        artifact_type="location",
+    )
+    object_saved = storage.save_run_result(
+        {
+            "raw_idea": "object idea",
+            "state": {
+                "story_artifact": {
+                    "title": "Aether Compass",
+                    "description": "An arcane compass.",
+                    "objects": [{"name": "Aether Compass", "description": "An arcane compass."}],
+                }
+            },
+            "meta": {"source": "object"},
+        },
+        filename="object_run",
+        artifact_type="object",
+    )
 
     assert Path(world_saved["run_path"]).name == "artifact.json"
     assert Path(world_saved["run_path"]).parent.parent.name == "world"
     assert Path(story_saved["run_path"]).parent.parent.name == "story"
     assert Path(character_saved["run_path"]).parent.parent.name == "character"
+    assert Path(location_saved["run_path"]).parent.parent.name == "location"
+    assert Path(object_saved["run_path"]).parent.parent.name == "object"
 
     story_loaded = storage.load_run(story_saved["run_id"], artifact_type="story")
     assert story_loaded is not None
@@ -133,6 +165,38 @@ def test_artifact_types_save_to_separate_paths(tmp_path: Path, monkeypatch) -> N
     assert by_id[world_saved["run_id"]]["artifact_type"] == "world"
     assert by_id[story_saved["run_id"]]["artifact_type"] == "story"
     assert by_id[character_saved["run_id"]]["artifact_type"] == "character"
+    assert by_id[location_saved["run_id"]]["artifact_type"] == "location"
+    assert by_id[object_saved["run_id"]]["artifact_type"] == "object"
+
+
+def test_gallery_listing_filters_by_artifact_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
+
+    world_saved = storage.save_run_result(
+        {"raw_idea": "world idea", "state": {"world_setting": "setting"}, "meta": {}},
+        filename="world_filter",
+    )
+    location_saved = storage.save_run_result(
+        {
+            "raw_idea": "location idea",
+            "state": {
+                "story_artifact": {
+                    "title": "Sky Dock",
+                    "description": "A floating dock.",
+                    "locations": [{"name": "Sky Dock", "description": "A floating dock."}],
+                }
+            },
+            "meta": {"source": "location"},
+        },
+        filename="location_filter",
+        artifact_type="location",
+    )
+
+    world_listing = storage.list_run_previews(artifact_type="world")
+    location_listing = storage.list_run_previews(artifact_type="location")
+
+    assert [item["run_id"] for item in world_listing["items"]] == [world_saved["run_id"]]
+    assert [item["run_id"] for item in location_listing["items"]] == [location_saved["run_id"]]
 
 
 def test_drafts_are_separated_by_artifact_type(tmp_path: Path, monkeypatch) -> None:
@@ -372,3 +436,41 @@ def test_loader_rejects_non_local_image_file_paths(tmp_path: Path, monkeypatch) 
     resolved = storage.find_character_by_urn("urn:lorebook:character:x")
     assert resolved is not None
     assert resolved["character"]["image_data"] == ""
+
+
+def test_story_location_image_is_saved_inside_artifact_folder(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(storage, "get_outputs_root", lambda: tmp_path)
+
+    source_image = tmp_path / "images" / "dock.png"
+    source_image.parent.mkdir(parents=True, exist_ok=True)
+    source_image.write_bytes(b"fake-location-bytes")
+
+    saved = storage.save_run_result(
+        {
+            "raw_idea": "location image",
+            "state": {
+                "story_artifact": {
+                    "title": "Sky Dock",
+                    "description": "A floating dock.",
+                    "locations": [
+                        {
+                            "name": "Sky Dock",
+                            "description": "A floating dock.",
+                            "image_path": str(source_image),
+                        }
+                    ],
+                }
+            },
+            "meta": {"source": "location"},
+        },
+        filename="location_with_image",
+        artifact_type="location",
+    )
+
+    run_path = Path(saved["run_path"])
+    record = storage.load_run(saved["run_id"], artifact_type="location")
+    assert record is not None
+    location = record["state"]["story_artifact"]["locations"][0]
+    image_name = location["image_name"]
+    assert image_name.startswith(saved["run_id"])
+    assert (run_path.parent / image_name).exists()
