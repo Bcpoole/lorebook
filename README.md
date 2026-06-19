@@ -3,7 +3,7 @@
 [![CI](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml/badge.svg)](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Node.js](https://img.shields.io/badge/node-20.19%2B-339933?logo=nodedotjs&logoColor=white)
-![License](https://img.shields.io/github/license/Bcpoole/lorebook)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Lorebook is a local-first Python app for generating a world setting and companion character through a LangGraph workflow, with a FastAPI backend and a Svelte frontend.
 
