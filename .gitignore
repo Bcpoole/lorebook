@@ -31,10 +31,6 @@ ui/.vitest-app-test.log
 outputs/
 
 # Local/private prompt and SD style configs (track underscore templates only)
-src/lorebook/config/prompts/*
-!src/lorebook/config/prompts/_*.py
-!src/lorebook/config/prompts/__init__.py
-!src/lorebook/config/prompts/.gitignore
 src/lorebook/config/sd/*
 !src/lorebook/config/sd/_*.py
 !src/lorebook/config/sd/__init__.py

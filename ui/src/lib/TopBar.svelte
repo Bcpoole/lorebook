@@ -16,6 +16,7 @@
     { id: 'story', label: '📕 Story' },
     { id: 'character', label: '🎭 Character' },
     { id: 'gallery', label: '🗂️ Gallery' },
+    { id: 'personas', label: '🎭 Personas' },
     { id: 'world-story', label: '📚 Worlds & Stories' },
   ]
 </script>

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from lorebook.config.prompts import AVATARS_DIR, list_personas
+from lorebook.config.personas import get_personas_dir, load_persona
 
 router = APIRouter(prefix="/personas", tags=["personas"])
 
@@ -20,7 +21,12 @@ async def get_personas() -> list[dict]:
                 "name": meta.name,
                 "description": meta.description,
                 "tags": meta.tags,
+                "favorite": bool(meta.favorite),
+                "avatar": meta.avatar,
                 "avatarUrl": f"/api/personas/{meta.id}/avatar" if meta.avatar else None,
+                "promptCount": len(meta.prompts.to_prompt_items()),
+                "created": meta.created,
+                "modified": meta.modified,
             }
         )
     return result
@@ -37,9 +43,25 @@ async def get_persona_avatar(persona_id: str) -> FileResponse:
     if meta is None or not meta.avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
-    candidate = (AVATARS_DIR / meta.avatar).resolve()
-    avatars_root = AVATARS_DIR.resolve()
-    if avatars_root not in candidate.parents or not candidate.is_file():
+    avatar_name = str(meta.avatar).strip()
+    candidate = None
+
+    # Persisted personas: avatar file is colocated in outputs/personas/{id}/
+    persisted = load_persona(persona_id)
+    if persisted is not None:
+        persisted_root = (get_personas_dir() / persona_id).resolve()
+        persisted_candidate = (persisted_root / avatar_name).resolve()
+        if persisted_root in persisted_candidate.parents and persisted_candidate.is_file():
+            candidate = persisted_candidate
+
+    # Built-in personas: avatar file is under config/prompts/avatars/
+    if candidate is None:
+        avatars_root = AVATARS_DIR.resolve()
+        builtin_candidate = (avatars_root / avatar_name).resolve()
+        if avatars_root in builtin_candidate.parents and builtin_candidate.is_file():
+            candidate = builtin_candidate
+
+    if candidate is None:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
     return FileResponse(

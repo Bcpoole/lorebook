@@ -36,6 +36,7 @@
       showStats: false,
       sdEndpoint: 'http://127.0.0.1:7860',
       persona: 'blank',
+      addCopyTagOnDuplicate: true,
     },
     experimentation: {
       temperature: 0.7,
@@ -227,6 +228,11 @@
         <div class="control-group checkbox-row">
           <label for="multiline-replies">Allow Multiline Replies</label>
           <input type="checkbox" id="multiline-replies" bind:checked={live.general.multilineReplies} />
+        </div>
+
+        <div class="control-group checkbox-row">
+          <label for="duplicate-copy-tag">Duplicate adds "copy" tag</label>
+          <input type="checkbox" id="duplicate-copy-tag" bind:checked={live.general.addCopyTagOnDuplicate} />
         </div>
 
         <hr class="divider" />
