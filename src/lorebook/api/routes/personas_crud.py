@@ -1,12 +1,12 @@
 """API routes for Persona CRUD operations."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from lorebook.config.personas import load_persona, save_persona, list_personas, delete_persona
 from lorebook.config.prompts import get_template_persona
-from lorebook.config.prompts._types import PersonaMeta, PersonaPrompt, PersonaPrompts
+from lorebook.config.prompts._types import PersonaMeta, PersonaPrompts
 
 router = APIRouter(prefix="/personas", tags=["personas"])
 

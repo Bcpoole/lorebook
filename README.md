@@ -1,5 +1,10 @@
 # Lorebook
 
+[![CI](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml/badge.svg)](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+![Node.js](https://img.shields.io/badge/node-20.19%2B-339933?logo=nodedotjs&logoColor=white)
+![License](https://img.shields.io/github/license/Bcpoole/lorebook)
+
 Lorebook is a local-first Python app for generating a world setting and companion character through a LangGraph workflow, with a FastAPI backend and a Svelte frontend.
 
 ## Project Structure
@@ -23,7 +28,7 @@ Lorebook is a local-first Python app for generating a world setting and companio
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - A local text-generation endpoint at `http://localhost:5001`
 - Node.js 20.19+ and npm 10+ for the Svelte frontend
 

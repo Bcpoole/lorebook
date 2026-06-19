@@ -1017,15 +1017,16 @@ def delete_draft_state(draft_id: str = "latest", artifact_type: str | None = Non
 def delete_artifact(artifact_id: str, artifact_type: str | None = None) -> bool:
     """Delete an artifact folder and all its contents by ID."""
     resolved_artifact_type = _normalize_artifact_type(artifact_type)
-    run_entry = _find_run_by_id(artifact_id, resolved_artifact_type)
+    run_entry = _resolve_run_path(artifact_id, resolved_artifact_type)
     if not run_entry:
-       return False
+        return False
     run_path, _ = run_entry
     artifact_folder = run_path.parent
     if artifact_folder.exists():
-       import shutil
-       shutil.rmtree(artifact_folder)
-       return True
+        import shutil
+
+        shutil.rmtree(artifact_folder)
+        return True
     return False
 
 

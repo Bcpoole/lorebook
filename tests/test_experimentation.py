@@ -88,6 +88,7 @@ def test_save_and_load_round_trip(client):
         "general": {
             "outputFormat": "plain",
             "multilineReplies": True,
+            "addCopyTagOnDuplicate": True,
         },
         "experimentation": {
             "temperature": 0.85,
@@ -130,6 +131,7 @@ def test_save_multiple_times_overwrites(client):
         "general": {
             "outputFormat": "markdown",
             "multilineReplies": True,
+            "addCopyTagOnDuplicate": True,
         },
         "experimentation": {
             "temperature": 0.5,
@@ -158,6 +160,7 @@ def test_save_multiple_times_overwrites(client):
         "general": {
             "outputFormat": "json",
             "multilineReplies": False,
+            "addCopyTagOnDuplicate": True,
         },
         "experimentation": {
             "temperature": 1.5,
