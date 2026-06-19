@@ -41,7 +41,13 @@
       {#if getAvatarSrc()}
         <img class="gallery-avatar" src={getAvatarSrc()} alt={`${persona.name} avatar`} />
       {:else}
-        <div class="gallery-avatar-placeholder" aria-label={`${persona.name} avatar missing`}>?</div>
+        <div
+          class="gallery-avatar-placeholder"
+          role="img"
+          aria-label={`${persona.name} avatar missing`}
+        >
+          <span aria-hidden="true">?</span>
+        </div>
       {/if}
 
       <div class="gallery-name-overlay">
@@ -189,7 +195,7 @@
     flex-direction: column;
     gap: 0.75rem;
     transition: all 0.2s ease;
-    cursor: pointer;
+    cursor: default;
     position: relative;
     overflow: hidden;
   }
@@ -592,6 +598,11 @@
   .btn-danger:hover {
     background: rgba(127, 29, 29, 0.22);
     border-color: #b91c1c;
+  }
+
+  .btn:focus-visible {
+    outline: 2px solid rgba(103, 232, 249, 0.95);
+    outline-offset: 1px;
   }
 
   .btn-icon {

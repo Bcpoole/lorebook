@@ -436,7 +436,7 @@
     <div class="sort-group">
       <span class="sort-label">Sort</span>
       <div class="sort-controls">
-        <select class="sort-select sort-select-primary" bind:value={sortBy}>
+        <select class="sort-select sort-select-primary" bind:value={sortBy} aria-label="Sort field">
           <option value="name">Name</option>
           <option value="created">Created</option>
           <option value="modified">Modified</option>
@@ -445,7 +445,10 @@
           type="button"
           class="sort-direction-toggle"
           onclick={() => (sortDirection = sortDirection === "asc" ? "desc" : "asc")}
-          aria-label="Toggle sort direction"
+          aria-label={sortDirection === "asc"
+            ? "Change sort direction to descending"
+            : "Change sort direction to ascending"}
+          aria-pressed={sortDirection === "desc"}
           title="Toggle sort direction"
         >
           {sortDirection === "asc" ? "Asc ↑" : "Desc ↓"}
@@ -463,6 +466,8 @@
           onclick={() => (viewMode = "detailed")}
           title="Detailed view"
           aria-label="Detailed view"
+          aria-pressed={viewMode === "detailed"}
+          aria-controls="persona-view-results"
         >
           ▤
         </button>
@@ -473,6 +478,8 @@
           onclick={() => (viewMode = "gallery")}
           title="Gallery view"
           aria-label="Gallery view"
+          aria-pressed={viewMode === "gallery"}
+          aria-controls="persona-view-results"
         >
           ▦
         </button>
@@ -546,7 +553,7 @@
       </div>
     </div>
   {:else}
-    <div class="persona-sections">
+    <div class="persona-sections" id="persona-view-results">
       <section class="persona-section persona-section-favorites" class:persona-section-favorites-collapsed={!favoritesSectionExpanded}>
         <button
           type="button"
@@ -831,6 +838,10 @@
     background: rgba(14, 165, 233, 0.08);
   }
 
+  .sort-direction-toggle:focus-visible {
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.75);
+  }
+
   .sort-select option {
     background: #0f172a;
     color: #e2e8f0;
@@ -865,6 +876,13 @@
   .view-toggle-btn:hover {
     background: rgba(14, 165, 233, 0.08);
     color: #e2e8f0;
+  }
+
+  .view-toggle-btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.85);
+    background: rgba(14, 165, 233, 0.08);
+    color: #e0f2fe;
   }
 
   .view-toggle-btn.active {
