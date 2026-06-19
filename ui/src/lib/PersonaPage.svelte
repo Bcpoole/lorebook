@@ -430,31 +430,31 @@
       aria-controls="template-section-content"
       title={templateSectionExpanded ? "Collapse templates" : "Expand templates"}
     >
-      📋 Template {templateSectionExpanded ? "▾" : "▸"}
+      📋 Templates {templateSectionExpanded ? "▾" : "▸"}
     </button>
     {#if templateSectionExpanded}
       <div class="template-grid" id="template-section-content">
-        <article class="template-card">
+        <article class="template-card template-card-opt-2">
           <div class="template-card-header">
             <h3>Default</h3>
-            <div class="template-actions template-actions-final">
+            <div class="template-actions template-actions-opt-2">
               <button
                 type="button"
-                class="template-btn template-btn-final-icon"
+                class="template-btn template-btn-view"
                 onclick={openTemplateReadonly}
                 title="View template"
                 aria-label="View template"
               >
-                👁
+                👁 View
               </button>
               <button
                 type="button"
-                class="template-btn template-btn-final-icon"
+                class="template-btn template-btn-new"
                 onclick={openCreateFromTemplate}
                 title="Create new persona from template"
                 aria-label="Create new persona from template"
               >
-                ➕
+                ➕ New
               </button>
             </div>
           </div>
@@ -508,6 +508,7 @@
                 {#each favoritePersonas as persona (persona.id)}
                   <PersonaCard
                     {persona}
+                    variant="glow"
                     onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
                     onedit={() => handleEditPersona({ detail: { persona } })}
                     onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
@@ -530,6 +531,8 @@
             {#each allPersonas as persona (persona.id)}
               <PersonaCard
                 {persona}
+                variant="glow"
+                highlightFavoriteBorder={true}
                 onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
                 onedit={() => handleEditPersona({ detail: { persona } })}
                 onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
@@ -732,6 +735,18 @@
     border-radius: 12px;
     padding: 1rem;
     background: rgba(15, 23, 42, 0.45);
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .template-card:hover {
+    transform: translateY(-1px);
+  }
+
+  .template-card-opt-2 {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: linear-gradient(165deg, rgba(30, 41, 59, 0.88), rgba(15, 23, 42, 0.95));
   }
 
   .template-card-header {
@@ -802,21 +817,23 @@
     transform: translateY(-1px);
   }
 
-  .template-actions-final .template-btn-final-icon {
-    width: 2.8rem;
-    min-width: 2.8rem;
-    padding-left: 0.25rem;
-    padding-right: 0.25rem;
-    text-align: center;
-    font-size: 1rem;
-    border-color: transparent;
-    background: transparent;
-    color: #e2e8f0;
+  .template-actions .template-btn-view,
+  .template-actions .template-btn-new {
+    min-height: 2rem;
   }
 
-  .template-actions-final .template-btn-final-icon:hover {
-    background: rgba(30, 41, 59, 0.45);
-    border-color: #475569;
+  .template-actions-opt-2 .template-btn {
+    border-color: #334155;
+    background: rgba(30, 41, 59, 0.65);
+    color: #e2e8f0;
+    font-size: 0.74rem;
+    padding: 0.32rem 0.55rem;
+  }
+
+  .template-actions-opt-2 .template-btn-new {
+    border-color: #3b82f6;
+    background: rgba(37, 99, 235, 0.28);
+    color: #dbeafe;
   }
 
   .loading {
@@ -939,7 +956,7 @@
 
   .personas-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.5rem;
   }
 
