@@ -18,6 +18,9 @@
 
   let activeTab = $state('experiment')
   let lastEditedDimension = $state(null)
+  let uiShellToneOpen = $state(false)
+  let bgImageUploading = $state(false)
+  let bgImageUploadError = $state('')
 
   const samplerOptions = [
     'DPM++ 2M',
@@ -26,6 +29,21 @@
     'Euler A',
     'DPM++ SDE',
   ]
+
+  const uiShellToneOptions = [
+    { value: 'deep-slate', label: 'Deep Slate', hex: '#1E2D31' },
+    { value: 'teal-slate', label: 'Teal Slate', hex: '#22363B' },
+    { value: 'ocean-gray', label: 'Ocean Gray', hex: '#274046' },
+    { value: 'misty-teal', label: 'Misty Teal', hex: '#2B454B' },
+  ]
+
+  let selectedUiShellToneOption = $derived.by(() => {
+    const selectedValue = live?.general?.uiShellTone ?? defaults.general.uiShellTone
+    return (
+      uiShellToneOptions.find((option) => option.value === selectedValue)
+      ?? uiShellToneOptions[0]
+    )
+  })
 
   const defaults = {
     general: {
@@ -37,6 +55,8 @@
       sdEndpoint: 'http://127.0.0.1:7860',
       persona: 'blank',
       addCopyTagOnDuplicate: true,
+      uiShellTone: 'teal-slate',
+      uiShellImage: '',
     },
     experimentation: {
       temperature: 0.7,
@@ -127,6 +147,39 @@
 
   function handleCancelSd() {
     onCancelSd()
+  }
+
+  function chooseUiShellTone(value) {
+    live.general.uiShellTone = value
+    uiShellToneOpen = false
+  }
+
+  async function uploadBackgroundImage(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    bgImageUploadError = ''
+    bgImageUploading = true
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/user-assets/upload/background', { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail ?? `Upload failed (${res.status})`)
+      }
+      const { url } = await res.json()
+      live.general.uiShellImage = url
+    } catch (e) {
+      bgImageUploadError = e.message ?? 'Upload failed'
+    } finally {
+      bgImageUploading = false
+      event.target.value = ''
+    }
+  }
+
+  function clearBackgroundImage() {
+    live.general.uiShellImage = ''
+    bgImageUploadError = ''
   }
 
   // Sync top-level checkboxes with general config
@@ -223,6 +276,63 @@
             <option value="plain">Plain Text</option>
             <option value="json">JSON</option>
           </select>
+        </div>
+
+        <div class="control-group">
+          <label for="ui-shell-tone">UI Shell Tone</label>
+          <div class="ui-shell-tone-row">
+            <details class="tone-dropdown" bind:open={uiShellToneOpen}>
+              <summary class="tone-dropdown-trigger" id="ui-shell-tone" aria-label="UI shell tone">
+                <span class="tone-dropdown-trigger-left">
+                  <span class="tone-preview-swatch" style={`background:${selectedUiShellToneOption.hex}`}></span>
+                  <span>{selectedUiShellToneOption.label} ({selectedUiShellToneOption.hex})</span>
+                </span>
+                <span class="tone-dropdown-caret" aria-hidden="true">▾</span>
+              </summary>
+              <div class="tone-dropdown-menu" role="listbox" aria-label="UI shell tone options">
+                {#each uiShellToneOptions as option}
+                  <button
+                    type="button"
+                    class="tone-option-btn"
+                    class:active={live.general.uiShellTone === option.value}
+                    onclick={() => chooseUiShellTone(option.value)}
+                    role="option"
+                    aria-selected={live.general.uiShellTone === option.value}
+                  >
+                    <span class="tone-preview-swatch" style={`background:${option.hex}`}></span>
+                    <span class="tone-option-label">{option.label} ({option.hex})</span>
+                  </button>
+                {/each}
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="bg-image-upload">Background Image</label>
+          <div class="bg-image-row">
+            {#if live.general?.uiShellImage}
+              <div class="bg-image-preview-row">
+                <img class="bg-image-thumb" src={live.general.uiShellImage} alt="Background preview" />
+                <button type="button" class="bg-image-clear-btn" onclick={clearBackgroundImage} title="Remove background image">✕</button>
+              </div>
+            {:else}
+              <label class="bg-image-upload-label" for="bg-image-upload">
+                {bgImageUploading ? 'Uploading…' : 'Choose image…'}
+              </label>
+              <input
+                id="bg-image-upload"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                class="bg-image-file-input"
+                onchange={uploadBackgroundImage}
+                disabled={bgImageUploading}
+              />
+            {/if}
+            {#if bgImageUploadError}
+              <p class="bg-image-error">{bgImageUploadError}</p>
+            {/if}
+          </div>
         </div>
 
         <div class="control-group checkbox-row">
@@ -578,8 +688,172 @@
     align-items: center;
   }
 
+  .ui-shell-tone-row {
+    display: block;
+  }
+
+  .tone-dropdown {
+    flex: 1;
+    position: relative;
+  }
+
+  .tone-dropdown-trigger {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    padding: 0.35rem 0.45rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .tone-dropdown-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .tone-dropdown-trigger-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .tone-dropdown-caret {
+    color: #94a3b8;
+    font-size: 0.75rem;
+    transition: transform 0.16s ease;
+  }
+
+  .tone-dropdown[open] .tone-dropdown-caret {
+    transform: rotate(180deg);
+  }
+
+  .tone-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 0.2rem;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    background: #0f172a;
+    padding: 0.25rem;
+    z-index: 15;
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.45);
+  }
+
+  .tone-option-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.45);
+    color: #e2e8f0;
+    padding: 0.32rem 0.4rem;
+    font-size: 0.76rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .tone-option-btn:hover {
+    border-color: #475569;
+    background: rgba(51, 65, 85, 0.55);
+  }
+
+  .tone-option-btn.active {
+    border-color: #3b82f6;
+    background: rgba(37, 99, 235, 0.25);
+  }
+
+  .tone-option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tone-preview-swatch {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    flex: 0 0 auto;
+  }
+
   input[type='range'] {
     flex: 1;
+  }
+
+  /* Background image upload control */
+  .bg-image-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .bg-image-upload-label {
+    display: inline-block;
+    background: #111827;
+    color: #94a3b8;
+    border: 1px dashed #374151;
+    border-radius: 6px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .bg-image-upload-label:hover {
+    border-color: #60a5fa;
+    color: #93c5fd;
+  }
+
+  .bg-image-file-input {
+    display: none;
+  }
+
+  .bg-image-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .bg-image-thumb {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 5px;
+    border: 1px solid #334155;
+  }
+
+  .bg-image-clear-btn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 5px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .bg-image-clear-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #f87171;
+  }
+
+  .bg-image-error {
+    color: #f87171;
+    font-size: 0.72rem;
+    margin: 0;
   }
 
   input:not([type='checkbox']),

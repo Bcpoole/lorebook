@@ -30,6 +30,10 @@ ui/.vitest-app-test.log
 # Generated outputs
 outputs/
 
+# User-uploaded custom assets (persistent but local-only)
+user/
+!user/.gitkeep
+
 # Local/private prompt and SD style configs (track underscore templates only)
 src/lorebook/config/sd/*
 !src/lorebook/config/sd/_*.py

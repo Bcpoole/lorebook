@@ -247,7 +247,7 @@
   })
 </script>
 
-<section class="story-page">
+<section class="story-page dark-ui-page dark-ui-story">
   <div class="page-header">
     <h2>Story Artifact</h2>
     <button class="reset-btn" type="button" onclick={handleResetStoryPage}>Reset</button>
@@ -465,36 +465,36 @@
 </section>
 
 <style>
-  .story-page { display: grid; gap: 0.75rem; margin-top: 1rem; }
+  .story-page { display: grid; gap: 0.75rem; margin-top: 0; }
   .page-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-  h2 { margin: 0; }
-  textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem; }
+  h2 { margin: 0; color: var(--lb-page-heading, #0f172a); }
+  textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.6rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
   .setup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem; }
-  .setup-grid label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: #475569; }
-  .setup-grid input { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.45rem 0.55rem; }
+  .setup-grid label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--lb-text-2, #475569); }
+  .setup-grid input { border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.45rem 0.55rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
   .actions { display: flex; gap: 0.5rem; }
   .actions { flex-wrap: wrap; }
-  button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
-  .reset-btn { border-color: #94a3b8; background: #fff; color: #334155; }
-  .reset-btn:hover { border-color: #64748b; background: #f8fafc; }
-  button.secondary { background: #334155; border-color: #334155; }
-  button.ghost { border-color: #94a3b8; background: #fff; color: #334155; }
+  button { border: 1px solid var(--lb-accent-2, #2563eb); background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8)); color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
+  .reset-btn { border-color: var(--lb-btn-secondary-border, #94a3b8); background: var(--lb-btn-secondary-bg, #fff); color: var(--lb-btn-secondary-fg, #334155); }
+  .reset-btn:hover { border-color: var(--lb-border-2, #64748b); background: rgba(71, 85, 105, 0.5); }
+  button.secondary { background: rgba(51, 65, 85, 0.75); border-color: var(--lb-border-1, #334155); color: var(--lb-text-1, #fff); }
+  button.ghost { border-color: var(--lb-border-1, #94a3b8); background: transparent; color: var(--lb-text-2, #334155); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .artifact { border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.9rem; background: #fff; display: grid; gap: 0.8rem; }
+  .artifact { border: 1px solid var(--lb-border-1, #e2e8f0); border-radius: 8px; padding: 0.9rem; background: rgba(15, 23, 42, 0.5); display: grid; gap: 0.8rem; }
   .artifact-header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; }
   .overview-grid { display: grid; gap: 0.4rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .entity-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.55rem 0.65rem; background: #f8fafc; }
-  .entity-card label { display: grid; gap: 0.2rem; margin-bottom: 0.35rem; color: #475569; font-size: 0.85rem; }
+  .entity-card { border: 1px solid var(--lb-border-1, #e2e8f0); border-radius: 8px; padding: 0.55rem 0.65rem; background: rgba(15, 23, 42, 0.38); }
+  .entity-card label { display: grid; gap: 0.2rem; margin-bottom: 0.35rem; color: var(--lb-text-2, #475569); font-size: 0.85rem; }
   .entity-card input,
-  .entity-card textarea { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.4rem 0.5rem; }
+  .entity-card textarea { border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.4rem 0.5rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
   .entity-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-  .entity-image { margin-top: 0.35rem; width: 100%; max-width: 260px; border-radius: 8px; border: 1px solid #cbd5e1; background: #e2e8f0; }
+  .entity-image { margin-top: 0.35rem; width: 100%; max-width: 260px; border-radius: 8px; border: 1px solid var(--lb-border-1, #cbd5e1); background: rgba(15, 23, 42, 0.5); }
   button.small { padding: 0.3rem 0.55rem; font-size: 0.82rem; }
-  button.danger { border-color: #b91c1c; color: #b91c1c; }
-  .empty { color: #64748b; font-style: italic; }
-  .meta { color: #334155; font-size: 0.9rem; }
-  .tags { color: #0369a1; }
+  button.danger { border-color: #b91c1c; color: #fecaca; }
+  .empty { color: var(--lb-page-muted, #64748b); font-style: italic; }
+  .meta { color: var(--lb-page-muted, #334155); font-size: 0.9rem; }
+  .tags { color: #7dd3fc; }
   pre { background: #0f172a; color: #e2e8f0; padding: 0.6rem; border-radius: 6px; overflow: auto; }
-  .error { color: #b91c1c; }
-  .ok { color: #047857; }
+  .error { color: #fca5a5; }
+  .ok { color: #6ee7b7; }
 </style>

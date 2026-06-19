@@ -100,6 +100,8 @@
       multilineReplies: true,
       persona: 'blank',
       addCopyTagOnDuplicate: true,
+      uiShellTone: 'teal-slate',
+      uiShellImage: '',
     },
     experimentation: {
       temperature: 0.7,
@@ -121,6 +123,29 @@
       cfgScale: 3,
       samplerName: 'DPM++ 2M',
       negativePrompt: '',
+    },
+  }
+
+  const UI_SHELL_TONES = {
+    'deep-slate': {
+      base: '#1E2D31',
+      gradient: 'linear-gradient(135deg, #162328 0%, #1e2d31 45%, #101b1f 100%)',
+      edge: '#162328',
+    },
+    'teal-slate': {
+      base: '#22363B',
+      gradient: 'linear-gradient(135deg, #1b2f34 0%, #22363b 45%, #16262b 100%)',
+      edge: '#1b2f34',
+    },
+    'ocean-gray': {
+      base: '#274046',
+      gradient: 'linear-gradient(135deg, #1f3439 0%, #274046 45%, #1a2d32 100%)',
+      edge: '#1f3439',
+    },
+    'misty-teal': {
+      base: '#2B454B',
+      gradient: 'linear-gradient(135deg, #22383d 0%, #2b454b 45%, #1c3035 100%)',
+      edge: '#22383d',
     },
   }
 
@@ -164,6 +189,8 @@
           persona: incoming.persona ?? DEFAULT_EXPERIMENTATION.general.persona,
           addCopyTagOnDuplicate:
             incoming.addCopyTagOnDuplicate ?? DEFAULT_EXPERIMENTATION.general.addCopyTagOnDuplicate,
+          uiShellTone: incoming.uiShellTone ?? DEFAULT_EXPERIMENTATION.general.uiShellTone,
+          uiShellImage: incoming.uiShellImage ?? DEFAULT_EXPERIMENTATION.general.uiShellImage,
         },
         experimentation: {
           temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
@@ -208,6 +235,23 @@
   const selectedPersonaTagList = $derived.by(() => {
     if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return []
     return selectedPersona.tags.slice(0, 8)
+  })
+
+  const selectedUiShellTone = $derived.by(() => (
+    experimentationLive?.general?.uiShellTone ?? DEFAULT_EXPERIMENTATION.general.uiShellTone
+  ))
+
+  const uiShellPalette = $derived.by(() => {
+    return UI_SHELL_TONES[selectedUiShellTone] ?? UI_SHELL_TONES[DEFAULT_EXPERIMENTATION.general.uiShellTone]
+  })
+
+  const selectedUiShellImage = $derived.by(() => (
+    experimentationLive?.general?.uiShellImage ?? ''
+  ))
+
+  $effect(() => {
+    if (typeof document === 'undefined') return
+    document.documentElement.style.setProperty('--app-shell-root', uiShellPalette.edge)
   })
 
   function generateDefaultFilename() {
@@ -1764,48 +1808,55 @@
       </div>
     {/if}
 
-    <main>
+    <main
+      class:dark-ui-main={activeTab === 'world' || activeTab === 'story' || activeTab === 'character' || activeTab === 'gallery' || activeTab === 'world-story' || activeTab === 'personas'}
+      style={selectedUiShellImage
+        ? `--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient}; --app-main-image: url('${selectedUiShellImage}');`
+        : `--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient}; --app-main-image: none;`}
+    >
     {#if activeTab === 'world'}
-      <div class="page-header">
-        <h2>World Builder</h2>
-        <button class="page-reset-btn" type="button" onclick={handleResetWorldPage}>Reset</button>
-      </div>
-      <RawIdeaForm
-        {running}
-        llmConnected={apiReady()}
-        bind:rawIdea={currentRawIdea}
-        onrun={handleRun}
-        onstop={handleStopGeneration}
-      />
-      <AgentPanel
-        bind:workflowState={state}
-        {running}
-        bind:activeAgent={activeAgentTab}
-        {pendingSave}
-        {savedRun}
-        bind:filename
-        {suggesting}
-        showNext={!auto}
-        nextLabel={getNextButtonLabel()}
-          nextDisabled={!getResolvedNextStage() || running || (!apiReady() && getResolvedNextStage() !== 'save_assets') || (outputReview && outputReview.stage === activeAgentTab)}
-        showContinue={activeAgentTab !== 'save_assets'}
-        continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
-        llmConnected={apiReady()}
-        reviewState={outputReview}
-        reviewPanelOpen={reviewPanelOpen}
-        onnext={handleNextStage}
-        oncontinue={handleContinue}
-        onsave={handleSave}
-        onsuggestname={handleSuggestName}
-        onrandomname={handleRandomName}
-        onrunmodule={handleModuleRun}
-        oncharacterimage={handleCharacterImageGenerate}
-        onapprovereview={handleApproveReview}
-        onrejectreview={handleRejectReview}
-        oneditreview={(value) => updateReviewWip(value)}
-        onregeneratesummary={regenerateReviewSummary}
-        ontogglereviewpanel={() => (reviewPanelOpen = !reviewPanelOpen)}
-      />
+      <section class="dark-ui-page dark-ui-world">
+        <div class="page-header">
+          <h2>World Builder</h2>
+          <button class="page-reset-btn" type="button" onclick={handleResetWorldPage}>Reset</button>
+        </div>
+        <RawIdeaForm
+          {running}
+          llmConnected={apiReady()}
+          bind:rawIdea={currentRawIdea}
+          onrun={handleRun}
+          onstop={handleStopGeneration}
+        />
+        <AgentPanel
+          bind:workflowState={state}
+          {running}
+          bind:activeAgent={activeAgentTab}
+          {pendingSave}
+          {savedRun}
+          bind:filename
+          {suggesting}
+          showNext={!auto}
+          nextLabel={getNextButtonLabel()}
+            nextDisabled={!getResolvedNextStage() || running || (!apiReady() && getResolvedNextStage() !== 'save_assets') || (outputReview && outputReview.stage === activeAgentTab)}
+          showContinue={activeAgentTab !== 'save_assets'}
+          continueDisabled={!canContinueStage(activeAgentTab) || running || !apiReady()}
+          llmConnected={apiReady()}
+          reviewState={outputReview}
+          reviewPanelOpen={reviewPanelOpen}
+          onnext={handleNextStage}
+          oncontinue={handleContinue}
+          onsave={handleSave}
+          onsuggestname={handleSuggestName}
+          onrandomname={handleRandomName}
+          onrunmodule={handleModuleRun}
+          oncharacterimage={handleCharacterImageGenerate}
+          onapprovereview={handleApproveReview}
+          onrejectreview={handleRejectReview}
+          oneditreview={(value) => updateReviewWip(value)}
+          onregeneratesummary={regenerateReviewSummary}
+          ontogglereviewpanel={() => (reviewPanelOpen = !reviewPanelOpen)}
+        />
+      </section>
     {:else if activeTab === 'story'}
       <StoryPage
         llmConnected={apiReady()}
@@ -1885,10 +1936,23 @@
 </div>
 
 <style>
+  :global(html, body) {
+    margin: 0;
+    padding: 0;
+    background: var(--app-shell-root, #020617);
+  }
+
+  :global(#app) {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--app-shell-root, #020617);
+  }
+
   .app-container {
     display: flex;
     height: 100vh;
     position: relative;
+    background: var(--app-shell-root, #020617);
   }
 
   .left-panel-shell {
@@ -1959,9 +2023,14 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    padding: 1rem;
+    padding: 0.5rem 0.6rem 0.9rem;
     font-family: system-ui, sans-serif;
     min-width: 0;
+    background: var(--app-main-solid, #22363b);
+    background-image: var(--app-main-image, none);
+    background-size: cover;
+    background-position: center;
+    transition: background 0.2s ease;
   }
 
   .page-header {
@@ -1972,16 +2041,21 @@
     margin-bottom: 0.65rem;
   }
 
+  .dark-ui-world {
+    display: grid;
+    gap: 0.75rem;
+  }
+
   .page-header h2 {
     margin: 0;
     font-size: 1.2rem;
-    color: #0f172a;
+    color: var(--lb-page-heading, #0f172a);
   }
 
   .page-reset-btn {
-    border: 1px solid #94a3b8;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--lb-btn-secondary-border, #94a3b8);
+    background: var(--lb-btn-secondary-bg, #fff);
+    color: var(--lb-btn-secondary-fg, #334155);
     border-radius: 6px;
     padding: 0.4rem 0.75rem;
     cursor: pointer;
@@ -1990,14 +2064,15 @@
   }
 
   .page-reset-btn:hover {
-    border-color: #64748b;
-    background: #f8fafc;
+    border-color: var(--lb-border-2, #64748b);
+    background: rgba(71, 85, 105, 0.5);
   }
 
   .persona-side-panel {
     width: 280px;
-    border-left: 1px solid #e2e8f0;
-    background: #f8fafc;
+    border-left: 1px solid #1f2937;
+    background: #111827;
+    color: #e5e7eb;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -2005,13 +2080,13 @@
 
   .persona-side-header {
     padding: 0.75rem 0.9rem;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #1f2937;
     font-size: 0.78rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #475569;
-    background: #f1f5f9;
+    color: #9ca3af;
+    background: #0b1220;
     position: sticky;
     top: 0;
     z-index: 1;
@@ -2030,13 +2105,13 @@
 
   .persona-side-body .control-group label {
     font-size: 0.78rem;
-    color: #334155;
+    color: #cbd5e1;
   }
 
   .persona-side-body select {
-    background: #ffffff;
-    color: #0f172a;
-    border: 1px solid #cbd5e1;
+    background: #111827;
+    color: #e5e7eb;
+    border: 1px solid #374151;
     border-radius: 6px;
     padding: 0.38rem 0.5rem;
     font-size: 0.82rem;
@@ -2052,9 +2127,9 @@
     height: 256px;
     max-width: 100%;
     border-radius: 10px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid #374151;
     object-fit: cover;
-    background: #ffffff;
+    background: #0f172a;
   }
 
   .persona-avatar-placeholder {
@@ -2063,13 +2138,13 @@
     justify-content: center;
     font-size: 2.3rem;
     font-weight: 700;
-    color: #64748b;
-    background: #e2e8f0;
+    color: #94a3b8;
+    background: #1f2937;
   }
 
   .persona-description {
     font-size: 0.79rem;
-    color: #334155;
+    color: #cbd5e1;
     line-height: 1.35;
   }
 
@@ -2077,7 +2152,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    border-top: 1px dashed #cbd5e1;
+    border-top: 1px dashed #374151;
     padding-top: 0.4rem;
   }
 
@@ -2085,23 +2160,23 @@
     display: inline-block;
     font-size: 0.7rem;
     line-height: 1.1;
-    color: #0f766e;
-    border: 1px solid #99f6e4;
-    background: #ecfeff;
+    color: #bfdbfe;
+    border: 1px solid #334155;
+    background: #1e293b;
     padding: 0.18rem 0.45rem;
     border-radius: 999px;
   }
 
   .persona-tag-empty {
     font-size: 0.72rem;
-    color: #64748b;
+    color: #94a3b8;
     font-style: italic;
   }
 
   .persona-empty {
     margin: 0;
     font-size: 0.8rem;
-    color: #64748b;
+    color: #94a3b8;
     font-style: italic;
   }
 

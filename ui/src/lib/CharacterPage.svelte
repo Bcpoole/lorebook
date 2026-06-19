@@ -317,7 +317,7 @@
   })
 </script>
 
-<section class="character-page">
+<section class="character-page dark-ui-page dark-ui-character">
   <Toast bind:visible={toastVisible} message={toastMessage} />
   <div class="page-header">
     <h2>Character Generator</h2>
@@ -354,15 +354,15 @@
 </section>
 
 <style>
-  .character-page { display: grid; gap: 0.65rem; margin-top: 1rem; }
+  .character-page { display: grid; gap: 0.65rem; margin-top: 0; }
   .page-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-  h2 { margin: 0; }
-  textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem; }
+  h2 { margin: 0; color: var(--lb-page-heading, #0f172a); }
+  textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.6rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
   .actions { display: flex; gap: 0.5rem; }
-  button { border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
+  button { border: 1px solid var(--lb-accent-2, #2563eb); background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8)); color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .reset-btn { border-color: #94a3b8; background: #fff; color: #334155; }
-  .reset-btn:hover { border-color: #64748b; background: #f8fafc; }
-  .error { color: #b91c1c; }
-  .ok { color: #047857; }
+  .reset-btn { border-color: var(--lb-btn-secondary-border, #94a3b8); background: var(--lb-btn-secondary-bg, #fff); color: var(--lb-btn-secondary-fg, #334155); }
+  .reset-btn:hover { border-color: var(--lb-border-2, #64748b); background: rgba(71, 85, 105, 0.5); }
+  .error { color: #fca5a5; }
+  .ok { color: #6ee7b7; }
 </style>

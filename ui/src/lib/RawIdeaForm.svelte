@@ -34,19 +34,21 @@
   textarea {
     width: 100%;
     padding: 0.6rem;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--lb-input-border, #cbd5e1);
     border-radius: 6px;
     font-size: 0.95rem;
     resize: vertical;
     box-sizing: border-box;
+    background: var(--lb-input-bg, #fff);
+    color: var(--lb-input-fg, #0f172a);
   }
 
   button {
     align-self: flex-end;
     padding: 0.5rem 1.4rem;
-    background: #1e40af;
-    color: #fff;
-    border: none;
+    background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8));
+    color: #eff6ff;
+    border: 1px solid var(--lb-accent-2, #1d4ed8);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.95rem;

@@ -638,14 +638,17 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
-    padding: 2rem 1.5rem 2rem 1rem;
+    gap: 1.25rem;
+    padding: 0.9rem;
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
     min-height: 100vh;
     background: linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    box-shadow: 0 16px 32px rgba(2, 6, 23, 0.35);
   }
 
   .page-header {

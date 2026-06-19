@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from lorebook.api.routes import experimentation, graph, personas, personas_crud, run, save, stream
+from lorebook.api.routes import experimentation, graph, personas, personas_crud, run, save, stream, user_assets
 
 
 def create_app() -> FastAPI:
@@ -27,6 +27,12 @@ def create_app() -> FastAPI:
     app.include_router(experimentation.router, prefix="/api")
     app.include_router(personas_crud.router, prefix="/api")
     app.include_router(personas.router, prefix="/api")
+    app.include_router(user_assets.router, prefix="/api")
+
+    # Serve user-uploaded assets (backgrounds etc.) from the persistent user/ directory.
+    user_dir = Path(__file__).resolve().parents[3] / "user"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/user-assets", StaticFiles(directory=str(user_dir)), name="user-assets")
 
     # Serve compiled Svelte build in production.
     dist_dir = Path(__file__).resolve().parents[3] / "ui" / "dist"

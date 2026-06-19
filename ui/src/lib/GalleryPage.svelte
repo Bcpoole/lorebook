@@ -399,7 +399,7 @@
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<section class="gallery-page">
+<section class="gallery-page dark-ui-page dark-ui-gallery">
   <div class="gallery-topbar">
     <h2>{title}</h2>
   </div>
@@ -739,7 +739,7 @@
 
 <style>
   /* ── Gallery layout ───────────────────────────────────────── */
-  .gallery-page { display: grid; gap: 0.8rem; margin-top: 1rem; }
+  .gallery-page { display: grid; gap: 0.8rem; margin-top: 0; }
 
   .gallery-topbar {
     display: flex;
@@ -757,9 +757,9 @@
   }
 
   .artifact-tab-btn {
-    border: 1px solid #cbd5e1;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--lb-border-1, #cbd5e1);
+    background: rgba(51, 65, 85, 0.36);
+    color: var(--lb-text-2, #334155);
     border-radius: 999px;
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
@@ -767,19 +767,21 @@
   }
 
   .artifact-tab-btn.active {
-    border-color: #1d4ed8;
-    background: #2563eb;
-    color: #fff;
+    border-color: var(--lb-accent-2, #1d4ed8);
+    background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8));
+    color: #eff6ff;
   }
 
   /* ── Filters ──────────────────────────────────────────────── */
   .filters { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
 
   .filter-input {
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--lb-input-border, #cbd5e1);
     border-radius: 6px;
     padding: 0.4rem 0.55rem;
     font-size: 0.85rem;
+    background: var(--lb-input-bg, #fff);
+    color: var(--lb-input-fg, #0f172a);
   }
 
   .filter-tag { width: 8rem; }
@@ -789,15 +791,15 @@
     align-items: center;
     gap: 0.3rem;
     font-size: 0.85rem;
-    color: #334155;
+    color: var(--lb-text-2, #334155);
     cursor: pointer;
     white-space: nowrap;
   }
 
   .apply-btn {
-    border: 1px solid #334155;
-    background: #334155;
-    color: #fff;
+    border: 1px solid var(--lb-accent-2, #334155);
+    background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8));
+    color: #eff6ff;
     border-radius: 6px;
     padding: 0.35rem 0.7rem;
     cursor: pointer;
@@ -813,8 +815,8 @@
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 
-  .empty-note { color: #94a3b8; font-size: 0.85rem; }
-  .error { color: #b91c1c; }
+  .empty-note { color: var(--lb-page-muted, #94a3b8); font-size: 0.85rem; }
+  .error { color: #fca5a5; }
 
   /* ── Modal overlay ────────────────────────────────────────── */
   .modal {

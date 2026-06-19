@@ -1,0 +1,67 @@
+.dark-ui-main {
+  background: var(
+    --app-main-gradient,
+    linear-gradient(135deg, #1b2f34 0%, #22363b 45%, #16262b 100%)
+  );
+  color: #e2e8f0;
+}
+
+.dark-ui-page {
+  --lb-page-heading: #f8fafc;
+  --lb-page-muted: #94a3b8;
+  --lb-surface-1: #0f172a;
+  --lb-surface-2: #1e293b;
+  --lb-surface-3: #111827;
+  --lb-border-1: #334155;
+  --lb-border-2: #475569;
+  --lb-text-1: #e2e8f0;
+  --lb-text-2: #cbd5e1;
+  --lb-accent-1: #2563eb;
+  --lb-accent-2: #1d4ed8;
+  --lb-danger-1: #ef4444;
+  --lb-success-1: #22c55e;
+  --lb-btn-secondary-bg: rgba(51, 65, 85, 0.48);
+  --lb-btn-secondary-fg: #cbd5e1;
+  --lb-btn-secondary-border: #334155;
+  --lb-input-bg: #1e293b;
+  --lb-input-border: #334155;
+  --lb-input-fg: #e2e8f0;
+  --lb-input-placeholder: #64748b;
+
+  color: var(--lb-text-1);
+  background: linear-gradient(135deg, #0f172a 0%, #1a1f35 50%, #0f172a 100%);
+  border: 1px solid var(--lb-border-1);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 16px 32px rgba(2, 6, 23, 0.35);
+}
+
+.dark-ui-page :where(h2, h3, h4, strong) {
+  color: var(--lb-page-heading);
+}
+
+.dark-ui-page :where(p, label, li, span) {
+  color: var(--lb-text-2);
+}
+
+.dark-ui-page :where(input, textarea, select) {
+  background: var(--lb-input-bg);
+  border-color: var(--lb-input-border);
+  color: var(--lb-input-fg);
+}
+
+.dark-ui-page :where(input::placeholder, textarea::placeholder) {
+  color: var(--lb-input-placeholder);
+}
+
+.dark-ui-page :where(.error) {
+  color: #fca5a5;
+}
+
+.dark-ui-page :where(.ok) {
+  color: #6ee7b7;
+}
+
+.dark-ui-page :where(.meta, .empty, .empty-note) {
+  color: var(--lb-page-muted);
+}
