@@ -2073,6 +2073,8 @@
     border-left: 1px solid #1f2937;
     background: #111827;
     color: #e5e7eb;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 12px;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -2114,7 +2116,8 @@
     border: 1px solid #374151;
     border-radius: 6px;
     padding: 0.38rem 0.5rem;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
+    font-family: inherit;
   }
 
   .persona-avatar-wrap {
@@ -2160,7 +2163,7 @@
     display: inline-block;
     font-size: 0.7rem;
     line-height: 1.1;
-    color: #bfdbfe;
+    color: #94a3b8;
     border: 1px solid #334155;
     background: #1e293b;
     padding: 0.18rem 0.45rem;
