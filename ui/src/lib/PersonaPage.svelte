@@ -33,6 +33,7 @@
   let editModalPrefillTemplate = $state(false);
   let editModalPromptsOnly = $state(false);
   let templateSectionExpanded = $state(true);
+  let favoritesSectionExpanded = $state(true);
   let searchQuery = $state("");
   let sortBy = $state("name"); // 'name', 'created', 'prompts'
 
@@ -322,6 +323,10 @@
     templateSectionExpanded = !templateSectionExpanded;
   }
 
+  function toggleFavoritesSection() {
+    favoritesSectionExpanded = !favoritesSectionExpanded;
+  }
+
   function closeWizard() {
     showWizard = false;
   }
@@ -359,6 +364,12 @@
 
     return result;
   });
+
+  const favoritePersonas = $derived.by(() =>
+    filteredPersonas.filter((persona) => Boolean(persona.favorite)),
+  );
+
+  const allPersonas = $derived.by(() => filteredPersonas);
 </script>
 
 <div class="persona-page">
@@ -476,17 +487,59 @@
       </div>
     </div>
   {:else}
-    <div class="personas-grid">
-      {#each filteredPersonas as persona (persona.id)}
-        <PersonaCard
-          {persona}
-          onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
-          onedit={() => handleEditPersona({ detail: { persona } })}
-          onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
-          ondelete={() =>
-            handleDeletePersona({ detail: { personaId: persona.id } })}
-        />
-      {/each}
+    <div class="persona-sections">
+      <section class="persona-section persona-section-favorites" class:persona-section-favorites-collapsed={!favoritesSectionExpanded}>
+        <button
+          type="button"
+          class="persona-section-badge"
+          onclick={toggleFavoritesSection}
+          aria-expanded={favoritesSectionExpanded}
+          aria-controls="favorites-section-content"
+          title={favoritesSectionExpanded ? "Collapse favorites" : "Expand favorites"}
+        >
+          ⭐ Favorites {favoritesSectionExpanded ? "▾" : "▸"}
+        </button>
+        {#if favoritesSectionExpanded}
+          <div id="favorites-section-content">
+            {#if favoritePersonas.length === 0}
+              <p class="persona-section-empty">No favorites yet.</p>
+            {:else}
+              <div class="personas-grid">
+                {#each favoritePersonas as persona (persona.id)}
+                  <PersonaCard
+                    {persona}
+                    onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
+                    onedit={() => handleEditPersona({ detail: { persona } })}
+                    onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
+                    ondelete={() =>
+                      handleDeletePersona({ detail: { personaId: persona.id } })}
+                  />
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </section>
+
+      <section class="persona-section">
+        <h2 class="persona-section-title">👤 All Personas</h2>
+        {#if allPersonas.length === 0}
+          <p class="persona-section-empty">No personas.</p>
+        {:else}
+          <div class="personas-grid">
+            {#each allPersonas as persona (persona.id)}
+              <PersonaCard
+                {persona}
+                onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
+                onedit={() => handleEditPersona({ detail: { persona } })}
+                onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
+                ondelete={() =>
+                  handleDeletePersona({ detail: { personaId: persona.id } })}
+              />
+            {/each}
+          </div>
+        {/if}
+      </section>
     </div>
   {/if}
 </div>
@@ -817,6 +870,71 @@
     gap: 1rem;
     justify-content: center;
     flex-wrap: wrap;
+  }
+
+  .persona-sections {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .persona-section {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .persona-section-favorites {
+    position: relative;
+    border: 2px dashed #334155;
+    border-radius: 12px;
+    background: rgba(250, 204, 21, 0.05);
+    padding: 1.5rem;
+    transition: padding 0.15s ease;
+  }
+
+  .persona-section-favorites.persona-section-favorites-collapsed {
+    padding: 0.55rem 1rem 0.65rem;
+  }
+
+  .persona-section-badge {
+    position: absolute;
+    top: -0.85rem;
+    left: 1.5rem;
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .persona-section-badge:hover {
+    filter: brightness(1.05);
+  }
+
+  .persona-section-badge:focus-visible {
+    outline: 2px solid #fde68a;
+    outline-offset: 2px;
+  }
+
+  .persona-section-title {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #cbd5e1;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+
+  .persona-section-empty {
+    margin: 0;
+    font-size: 0.84rem;
+    color: #94a3b8;
+    font-style: italic;
   }
 
   .personas-grid {
