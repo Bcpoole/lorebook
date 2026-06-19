@@ -2,23 +2,23 @@
   let {
     meta = {},
     showStats = false,
-    activeTab = 'world',
+    activeTab = "world",
     onselecttab = () => {},
-  } = $props()
+  } = $props();
 
   const elapsedMs = $derived.by(() => {
-    const parsed = Number(meta?.elapsed_ms ?? 0)
-    return Number.isFinite(parsed) ? parsed : 0
-  })
+    const parsed = Number(meta?.elapsed_ms ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
 
   const tabs = [
-    { id: 'world', label: '🌍 World' },
-    { id: 'story', label: '📕 Story' },
-    { id: 'character', label: '🎭 Character' },
-    { id: 'gallery', label: '🗂️ Gallery' },
-    { id: 'personas', label: '🎭 Personas' },
-    { id: 'world-story', label: '📚 Worlds & Stories' },
-  ]
+    { id: "world", label: "🌍 World" },
+    { id: "story", label: "📕 Story" },
+    { id: "character", label: "🎭 Character" },
+    { id: "gallery", label: "🗂️ Gallery" },
+    { id: "personas", label: "🎭 Personas" },
+    { id: "world-story", label: "🪶 Lore" },
+  ];
 </script>
 
 <header>
@@ -30,7 +30,12 @@
 
     <nav class="tabs" aria-label="Primary pages">
       {#each tabs as tab}
-        <button type="button" class="nav-btn" class:active={activeTab === tab.id} onclick={() => onselecttab(tab.id)}>
+        <button
+          type="button"
+          class="nav-btn"
+          class:active={activeTab === tab.id}
+          onclick={() => onselecttab(tab.id)}
+        >
           {tab.label}
         </button>
       {/each}
@@ -50,8 +55,12 @@
     top: 0;
     z-index: 30;
     border-bottom: 1px solid #334155;
-    background:
-      radial-gradient(circle at top, #1e3a8a 0%, #111827 40%, #020617 100%);
+    background: radial-gradient(
+      circle at top,
+      #1e3a8a 0%,
+      #111827 40%,
+      #020617 100%
+    );
     color: #e2e8f0;
     font-family: system-ui, sans-serif;
     box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
@@ -133,7 +142,11 @@
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
-    transition: background-color 0.16s, color 0.16s, border-color 0.16s, transform 0.16s;
+    transition:
+      background-color 0.16s,
+      color 0.16s,
+      border-color 0.16s,
+      transform 0.16s;
   }
 
   .nav-btn:hover {
