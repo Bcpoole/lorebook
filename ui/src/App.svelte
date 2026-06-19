@@ -1620,8 +1620,8 @@
     class="restored-card" 
     role="status" 
     aria-live="polite"
-    onmouseover={() => { restoreBannerHovered = true }}
-    onmouseleave={() => { restoreBannerHovered = false }}
+    onpointerenter={() => { restoreBannerHovered = true }}
+    onpointerleave={() => { restoreBannerHovered = false }}
   >
     <div class="restored-card-header">
       <span class="restored-card-label">📋 Restored Draft</span>
@@ -2113,25 +2113,6 @@
 
   .error {
     color: #dc2626;
-  }
-
-  .restored-banner {
-    position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    width: 320px;
-    border: 1px solid #7c3aed;
-    border-radius: 12px;
-    background: #faf5ff;
-    color: #5b21b6;
-    font-size: 0.9rem;
-    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    z-index: 40;
-    animation: slideInUp 0.3s ease-out;
   }
 
   @keyframes slideInUp {

@@ -10,7 +10,7 @@
   } = $props()
 
   let editing = $state(false)
-  let formData = $state(structuredClone(location))
+  let formData = $state({})
   let saving = $state(false)
   let errors = $state({})
   let toastMessage = $state('')
@@ -19,9 +19,7 @@
   const ATMOSPHERE_OPTIONS = ['cozy', 'mysterious', 'grand', 'dark', 'bright', 'eerie', 'peaceful', 'bustling', 'ancient', 'modern']
 
   function toggleEdit() {
-    if (editing) {
-      formData = structuredClone(location)
-    }
+    formData = structuredClone(location)
     editing = !editing
   }
 
@@ -79,7 +77,7 @@
     <div class="item-read">
       <div class="item-header">
         <h4>{location.name}</h4>
-        <button class="edit-btn" on:click={toggleEdit} type="button" title="Edit location">✏️</button>
+        <button class="edit-btn" onclick={toggleEdit} type="button" title="Edit location">✏️</button>
       </div>
       <p class="description">{location.description}</p>
       {#if location.atmosphere}
@@ -131,17 +129,17 @@
 
         <div class="form-group">
           <label for="loc-{locationIndex}-access">How to Access</label>
-          <textarea id="loc-{locationIndex}-access" bind:value={formData.accessibility} rows="2" placeholder="e.g., 'Hidden behind waterfall'" />
+          <textarea id="loc-{locationIndex}-access" bind:value={formData.accessibility} rows="2" placeholder="e.g., 'Hidden behind waterfall'"></textarea>
         </div>
 
         <div class="form-group">
           <label for="loc-{locationIndex}-inhabitants">Inhabitants</label>
-          <textarea id="loc-{locationIndex}-inhabitants" bind:value={formData.inhabitants} rows="2" placeholder="Who lives here?" />
+          <textarea id="loc-{locationIndex}-inhabitants" bind:value={formData.inhabitants} rows="2" placeholder="Who lives here?"></textarea>
         </div>
 
         <div class="form-group">
           <label for="loc-{locationIndex}-history">History</label>
-          <textarea id="loc-{locationIndex}-history" bind:value={formData.history} rows="2" placeholder="Background & significance" />
+          <textarea id="loc-{locationIndex}-history" bind:value={formData.history} rows="2" placeholder="Background & significance"></textarea>
         </div>
 
         {#if errors.submit}
@@ -149,10 +147,10 @@
         {/if}
 
         <div class="edit-actions">
-          <button type="button" class="save-btn" on:click={handleSave} disabled={saving}>
+          <button type="button" class="save-btn" onclick={handleSave} disabled={saving}>
             {saving ? '⏳ Saving...' : '💾 Save & Create Artifact'}
           </button>
-          <button type="button" class="cancel-btn" on:click={toggleEdit} disabled={saving}>✕ Cancel</button>
+          <button type="button" class="cancel-btn" onclick={toggleEdit} disabled={saving}>✕ Cancel</button>
         </div>
       </div>
     </div>

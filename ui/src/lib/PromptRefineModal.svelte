@@ -48,10 +48,25 @@
     onapply(suggestedPrompt)
     onclose()
   }
+
+  function handleOverlayClick(e) {
+    if (e.target === e.currentTarget) onclose()
+  }
+
+  function handleOverlayKeydown(e) {
+    if (e.key === 'Escape') onclose()
+  }
 </script>
 
-<div class="overlay" onclick={(e) => e.target.classList.contains('overlay') && onclose()}>
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
+<div
+  class="overlay"
+  role="button"
+  tabindex="0"
+  aria-label="Close prompt refine modal"
+  onclick={handleOverlayClick}
+  onkeydown={handleOverlayKeydown}
+>
+  <div class="modal">
     <div class="header">
       <h3>✨ {title}</h3>
       <button type="button" class="close-btn" onclick={onclose} aria-label="Close">✕</button>

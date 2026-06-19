@@ -8,7 +8,7 @@
 </script>
 
 <div class="object-modal">
-  <button class="modal-close" on:click={onClose} title="Close">✕</button>
+  <button class="modal-close" onclick={onClose} title="Close">✕</button>
 
   <div class="modal-content">
     <h2>{object?.name || 'Untitled Object'}</h2>
@@ -50,9 +50,9 @@
   </div>
 
   <div class="modal-actions">
-    <button class="action-btn edit-btn" on:click={onEdit}>Edit</button>
-    <button class="action-btn delete-btn" on:click={onDelete}>Delete</button>
-    <button class="action-btn close-btn" on:click={onClose}>Close</button>
+    <button class="action-btn edit-btn" onclick={onEdit}>Edit</button>
+    <button class="action-btn delete-btn" onclick={onDelete}>Delete</button>
+    <button class="action-btn close-btn" onclick={onClose}>Close</button>
   </div>
 </div>
 

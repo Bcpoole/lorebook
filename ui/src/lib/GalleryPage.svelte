@@ -24,7 +24,7 @@
   let search = $state('')
   let tag = $state('')
   let favoritesOnly = $state(false)
-  let activeArtifactTab = $state(initialTab)
+  let activeArtifactTab = $state('character')
 
   // Modal
   let selectedItem = $state(null) // gallery item (immediate, from local list)
@@ -390,9 +390,10 @@
   })
 
   onMount(() => {
-    if (!tabs.some((tab) => tab.id === activeArtifactTab)) {
-      activeArtifactTab = tabs[0]?.id ?? 'character'
-    }
+    const configuredTab = tabs.some((tab) => tab.id === initialTab)
+      ? initialTab
+      : tabs[0]?.id ?? 'character'
+    activeArtifactTab = configuredTab
   })
 </script>
 
@@ -1322,7 +1323,7 @@
     border: 1px solid #ddd6fe;
   }
 
-  .rel-note, .rel-empty {
+  .rel-empty {
     font-size: 0.75rem;
     color: #94a3b8;
     font-style: italic;

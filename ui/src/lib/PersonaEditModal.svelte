@@ -18,7 +18,7 @@
     onclose = () => {},
   } = $props()
 
-  const isCreateMode = !editingPersona
+  let isCreateMode = $derived(!editingPersona)
 
   function withTemplatePrompts(personaPrompts = [], fillMissingWithTemplate = false) {
     const base = templatePersona?.prompts ?? []
@@ -45,26 +45,21 @@
     }
   }
 
-  let formData = $state({
-    id: editingPersona?.id ?? '',
-    name: editingPersona?.name ?? '',
-    description: editingPersona?.description ?? '',
-    tags: [...(editingPersona?.tags ?? [])],
-    avatar: editingPersona?.avatar ?? '',
-    prompts: withTemplatePrompts(editingPersona?.prompts ?? [], isCreateMode && prefillTemplatePrompts),
-  })
+  function buildFormData() {
+    return {
+      id: editingPersona?.id ?? '',
+      name: editingPersona?.name ?? '',
+      description: editingPersona?.description ?? '',
+      tags: [...(editingPersona?.tags ?? [])],
+      avatar: editingPersona?.avatar ?? '',
+      prompts: withTemplatePrompts(editingPersona?.prompts ?? [], isCreateMode && prefillTemplatePrompts),
+    }
+  }
+
+  let formData = $state(buildFormData())
   let tagInput = $state('')
-
-  const initialSnapshot = normalizeForCompare({
-    id: editingPersona?.id ?? '',
-    name: editingPersona?.name ?? '',
-    description: editingPersona?.description ?? '',
-    tags: [...(editingPersona?.tags ?? [])],
-    avatar: editingPersona?.avatar ?? '',
-    prompts: withTemplatePrompts(editingPersona?.prompts ?? [], isCreateMode && prefillTemplatePrompts),
-  })
-
-  const initialPromptByKey = Object.fromEntries((initialSnapshot.prompts || []).map((p) => [p.key, p.system_prompt]))
+  let initialSnapshot = $state(normalizeForCompare(buildFormData()))
+  let initialPromptByKey = $state({})
 
   let isDirty = $derived.by(() => {
     return JSON.stringify(normalizeForCompare(formData)) !== JSON.stringify(initialSnapshot)
@@ -72,13 +67,30 @@
   let errors = $state({})
   let isSaving = $state(false)
 
-  // Keep prompt list aligned to full schema/template.
-  if (templatePersona && formData.prompts.length !== templatePersona.prompts.length) {
-    formData.prompts = withTemplatePrompts(
-      editingPersona?.prompts ?? formData.prompts,
-      isCreateMode && prefillTemplatePrompts,
+  function resetFromProps() {
+    const nextFormData = buildFormData()
+    formData = nextFormData
+    initialSnapshot = normalizeForCompare(nextFormData)
+    initialPromptByKey = Object.fromEntries(
+      (initialSnapshot.prompts || []).map((p) => [p.key, p.system_prompt]),
     )
+    tagInput = ''
+    errors = {}
   }
+
+  $effect(() => {
+    resetFromProps()
+  })
+
+  // Keep prompt list aligned to full schema/template.
+  $effect(() => {
+    if (templatePersona && formData.prompts.length !== templatePersona.prompts.length) {
+      formData.prompts = withTemplatePrompts(
+        formData.prompts,
+        isCreateMode && prefillTemplatePrompts,
+      )
+    }
+  })
 
   const templates = $derived.by(() => {
     if (!templatePersona) return {}
@@ -194,14 +206,25 @@
   }
 
   function handleClickOutside(e) {
-    if (e.target.classList.contains('modal-overlay')) {
+    if (e.target === e.currentTarget) {
       onclose()
     }
   }
+
+  function handleOverlayKeydown(e) {
+    if (e.key === 'Escape') onclose()
+  }
 </script>
 
-<div class="modal-overlay" onclick={handleClickOutside}>
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
+<div
+  class="modal-overlay"
+  role="button"
+  tabindex="0"
+  aria-label="Close persona editor"
+  onclick={handleClickOutside}
+  onkeydown={handleOverlayKeydown}
+>
+  <div class="modal">
     <div class="modal-header">
       <h2>
         {#if readonly}

@@ -123,7 +123,10 @@
 
 <div class="edit-panel">
   <h3>Edit Location</h3>
-  <form on:submit|preventDefault={handleSave}>
+  <form onsubmit={(event) => {
+    event.preventDefault()
+    void handleSave()
+  }}>
     <div class="form-group">
       <label for="name">Name *</label>
       <input
@@ -199,7 +202,7 @@
           <img src={imagePreview} alt="Location preview" />
         </div>
       {/if}
-      <input id="image" type="file" accept="image/*" on:change={handleImageChange} />
+      <input id="image" type="file" accept="image/*" onchange={handleImageChange} />
       <p class="help-text">PNG, JPG, or WebP (optional)</p>
     </div>
 
@@ -211,7 +214,7 @@
       <button type="submit" disabled={saving} class="primary">
         {saving ? '💾 Saving...' : '💾 Save Location'}
       </button>
-      <button type="button" on:click={handleCancel} disabled={saving}>✕ Cancel</button>
+      <button type="button" onclick={handleCancel} disabled={saving}>✕ Cancel</button>
     </div>
   </form>
 

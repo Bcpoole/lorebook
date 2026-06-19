@@ -29,7 +29,7 @@
 </script>
 
 <div class="story-modal">
-  <button class="modal-close" on:click={onClose} title="Close">✕</button>
+  <button class="modal-close" onclick={onClose} title="Close">✕</button>
 
   <div class="story-content">
     <h2>{storyArtifact.title || 'Untitled Story'}</h2>
@@ -63,7 +63,7 @@
       <div class="story-section expandable">
         <button
           class="section-toggle"
-          on:click={() => toggleSection('locations')}
+          onclick={() => toggleSection('locations')}
           type="button"
         >
           <span class="toggle-icon">{expandedSections.locations ? '▼' : '▶'}</span>
@@ -90,7 +90,7 @@
       <div class="story-section expandable">
         <button
           class="section-toggle"
-          on:click={() => toggleSection('objects')}
+          onclick={() => toggleSection('objects')}
           type="button"
         >
           <span class="toggle-icon">{expandedSections.objects ? '▼' : '▶'}</span>
@@ -117,7 +117,7 @@
       <div class="story-section expandable">
         <button
           class="section-toggle"
-          on:click={() => toggleSection('characters')}
+          onclick={() => toggleSection('characters')}
           type="button"
         >
           <span class="toggle-icon">{expandedSections.characters ? '▼' : '▶'}</span>
@@ -144,7 +144,7 @@
   </div>
 
   <div class="story-actions">
-    <button class="close-btn" on:click={onClose}>Close</button>
+    <button class="close-btn" onclick={onClose}>Close</button>
   </div>
 </div>
 

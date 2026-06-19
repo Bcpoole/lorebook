@@ -430,14 +430,25 @@
   }
 
   function handleClickOutside(e) {
-    if (e.target.classList.contains('wizard-overlay')) {
+    if (e.target === e.currentTarget) {
       onclose()
     }
   }
+
+  function handleOverlayKeydown(e) {
+    if (e.key === 'Escape') onclose()
+  }
 </script>
 
-<div class="wizard-overlay" onclick={handleClickOutside}>
-  <div class="wizard" onclick={(e) => e.stopPropagation()}>
+<div
+  class="wizard-overlay"
+  role="button"
+  tabindex="0"
+  aria-label="Close persona wizard"
+  onclick={handleClickOutside}
+  onkeydown={handleOverlayKeydown}
+>
+  <div class="wizard">
     <div class="wizard-header">
       <h2>✨ Create Persona with Wizard</h2>
       <button

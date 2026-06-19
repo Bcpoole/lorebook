@@ -97,8 +97,8 @@
         <div class="page-header">
           <h1>{location.name}</h1>
           <div class="actions">
-            <button on:click={() => (editMode = true)} class="edit-btn">✏️ Edit</button>
-            <button on:click={handleDelete} disabled={deleting} class="delete-btn">
+            <button onclick={() => (editMode = true)} class="edit-btn">✏️ Edit</button>
+            <button onclick={handleDelete} disabled={deleting} class="delete-btn">
               {deleting ? '🗑️ Deleting...' : '🗑️ Delete'}
             </button>
           </div>

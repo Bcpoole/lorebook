@@ -10,7 +10,7 @@
   } = $props()
 
   let editing = $state(false)
-  let formData = $state(structuredClone(object))
+  let formData = $state({})
   let saving = $state(false)
   let errors = $state({})
   let toastMessage = $state('')
@@ -19,9 +19,7 @@
   const MATERIAL_OPTIONS = ['wood', 'metal', 'stone', 'crystal', 'cloth', 'glass', 'ceramic', 'leather', 'bone', 'magical', 'unknown']
 
   function toggleEdit() {
-    if (editing) {
-      formData = structuredClone(object)
-    }
+    formData = structuredClone(object)
     editing = !editing
   }
 
@@ -79,7 +77,7 @@
     <div class="item-read">
       <div class="item-header">
         <h4>{object.name}</h4>
-        <button class="edit-btn" on:click={toggleEdit} type="button" title="Edit object">✏️</button>
+        <button class="edit-btn" onclick={toggleEdit} type="button" title="Edit object">✏️</button>
       </div>
       <p class="description">{object.description}</p>
       {#if object.material}
@@ -131,17 +129,17 @@
 
         <div class="form-group">
           <label for="obj-{objectIndex}-purpose">Purpose</label>
-          <textarea id="obj-{objectIndex}-purpose" bind:value={formData.purpose} rows="2" placeholder="What is it used for?" />
+          <textarea id="obj-{objectIndex}-purpose" bind:value={formData.purpose} rows="2" placeholder="What is it used for?"></textarea>
         </div>
 
         <div class="form-group">
           <label for="obj-{objectIndex}-origin">Origin & History</label>
-          <textarea id="obj-{objectIndex}-origin" bind:value={formData.origin} rows="2" placeholder="Where did it come from?" />
+          <textarea id="obj-{objectIndex}-origin" bind:value={formData.origin} rows="2" placeholder="Where did it come from?"></textarea>
         </div>
 
         <div class="form-group">
           <label for="obj-{objectIndex}-properties">Special Properties</label>
-          <textarea id="obj-{objectIndex}-properties" bind:value={formData.properties} rows="2" placeholder="Magical abilities or limitations" />
+          <textarea id="obj-{objectIndex}-properties" bind:value={formData.properties} rows="2" placeholder="Magical abilities or limitations"></textarea>
         </div>
 
         {#if errors.submit}
@@ -149,10 +147,10 @@
         {/if}
 
         <div class="edit-actions">
-          <button type="button" class="save-btn" on:click={handleSave} disabled={saving}>
+          <button type="button" class="save-btn" onclick={handleSave} disabled={saving}>
             {saving ? '⏳ Saving...' : '💾 Save & Create Artifact'}
           </button>
-          <button type="button" class="cancel-btn" on:click={toggleEdit} disabled={saving}>✕ Cancel</button>
+          <button type="button" class="cancel-btn" onclick={toggleEdit} disabled={saving}>✕ Cancel</button>
         </div>
       </div>
     </div>
