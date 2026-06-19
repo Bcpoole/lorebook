@@ -5,15 +5,16 @@ Summary: Lore and companion character generation workflow built with LangGraph
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: langgraph>=0.2.0
-Requires-Dist: requests>=2.31.0
-Requires-Dist: fastapi>=0.111.0
-Requires-Dist: uvicorn[standard]>=0.29.0
+Requires-Dist: langgraph>=1.2.6
+Requires-Dist: requests>=2.34.2
+Requires-Dist: fastapi>=0.137.2
+Requires-Dist: uvicorn[standard]>=0.49.0
 Requires-Dist: python-multipart>=0.0.9
-Requires-Dist: sse-starlette>=2.1.0
+Requires-Dist: sse-starlette>=3.4.4
 Provides-Extra: dev
-Requires-Dist: pytest>=8.0.0; extra == "dev"
-Requires-Dist: ruff>=0.5.0; extra == "dev"
+Requires-Dist: pytest>=9.1.1; extra == "dev"
+Requires-Dist: ruff>=0.15.18; extra == "dev"
+Requires-Dist: httpx2>=2.4.0; extra == "dev"
 Dynamic: license-file
 
 # Lorebook
@@ -21,7 +22,7 @@ Dynamic: license-file
 [![CI](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml/badge.svg)](https://github.com/Bcpoole/lorebook/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Node.js](https://img.shields.io/badge/node-20.19%2B-339933?logo=nodedotjs&logoColor=white)
-![License](https://img.shields.io/github/license/Bcpoole/lorebook)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Lorebook is a local-first Python app for generating a world setting and companion character through a LangGraph workflow, with a FastAPI backend and a Svelte frontend.
 
