@@ -7,7 +7,7 @@ name = "lorebook"
 version = "0.1.0"
 description = "Lore and companion character generation workflow built with LangGraph"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.2.0",
     "requests>=2.31.0",

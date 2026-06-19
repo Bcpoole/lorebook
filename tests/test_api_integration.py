@@ -673,6 +673,7 @@ def test_story_item_prompt_generation(monkeypatch) -> None:
 def test_story_item_image_mode_returns_image_name(monkeypatch) -> None:
     from lorebook.api.routes import run as run_routes
 
+    monkeypatch.setattr(run_routes, "_story_item_sd_prompt", lambda *args, **kwargs: "detailed concept art")
     monkeypatch.setattr(run_routes, "_assert_sd_available", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         run_routes,

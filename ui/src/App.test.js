@@ -201,7 +201,7 @@ describe('App stop-generation flow', () => {
     const storyInput = screen.getByPlaceholderText('Describe the story concept...')
     await fireEvent.input(storyInput, { target: { value: 'A city built on giant trees' } })
 
-    const worldTab = screen.getByRole('button', { name: /World/i })
+    const worldTab = screen.getByRole('button', { name: '🌍 World' })
     await fireEvent.click(worldTab)
 
     const worldInput = screen.getByPlaceholderText('Describe your world idea…')
