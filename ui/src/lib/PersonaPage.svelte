@@ -35,7 +35,8 @@
   let templateSectionExpanded = $state(true);
   let favoritesSectionExpanded = $state(true);
   let searchQuery = $state("");
-  let sortBy = $state("name"); // 'name', 'created', 'prompts'
+  let sortBy = $state("name"); // 'name', 'created', 'modified'
+  let sortDirection = $state("asc"); // 'asc' | 'desc'
 
   onMount(async () => {
     await loadPersonas();
@@ -341,6 +342,11 @@
 
   const filteredPersonas = $derived.by(() => {
     let result = personas;
+    const getTimestamp = (value) => {
+      const ts = Date.parse(value ?? "");
+      return Number.isNaN(ts) ? 0 : ts;
+    };
+    const directionMultiplier = sortDirection === "asc" ? 1 : -1;
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -355,10 +361,21 @@
 
     // Sort
     if (sortBy === "name") {
-      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sortBy === "prompts") {
       result = [...result].sort(
-        (a, b) => (b.promptCount ?? 0) - (a.promptCount ?? 0),
+        (a, b) => a.name.localeCompare(b.name) * directionMultiplier,
+      );
+    } else if (sortBy === "created") {
+      result = [...result].sort(
+        (a, b) =>
+          (getTimestamp(a.created) - getTimestamp(b.created)) *
+          directionMultiplier,
+      );
+    } else if (sortBy === "modified") {
+      result = [...result].sort(
+        (a, b) =>
+          (getTimestamp(a.modified ?? a.created) -
+            getTimestamp(b.modified ?? b.created)) *
+          directionMultiplier,
       );
     }
 
@@ -415,10 +432,25 @@
       bind:value={searchQuery}
     />
 
-    <select class="sort-select" bind:value={sortBy}>
-      <option value="name">Sort: Name</option>
-      <option value="prompts">Sort: Prompt Count</option>
-    </select>
+    <div class="sort-group">
+      <span class="sort-label">Sort</span>
+      <div class="sort-controls">
+        <select class="sort-select sort-select-primary" bind:value={sortBy}>
+          <option value="name">Name</option>
+          <option value="created">Created</option>
+          <option value="modified">Modified</option>
+        </select>
+        <button
+          type="button"
+          class="sort-direction-toggle"
+          onclick={() => (sortDirection = sortDirection === "asc" ? "desc" : "asc")}
+          aria-label="Toggle sort direction"
+          title="Toggle sort direction"
+        >
+          {sortDirection === "asc" ? "Asc ↑" : "Desc ↓"}
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="template-section" class:template-section-collapsed={!templateSectionExpanded}>
@@ -672,6 +704,36 @@
     align-items: center;
   }
 
+  .sort-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .sort-label {
+    color: #94a3b8;
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .sort-controls {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: #1e293b;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .sort-controls:focus-within {
+    border-color: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+  }
+
   .search-input {
     flex: 1;
     padding: 0.75rem 1rem;
@@ -695,10 +757,28 @@
   }
 
   .sort-select {
-    padding: 0.75rem 1rem;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    background: #1e293b;
+    padding: 0.75rem 0.9rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    appearance: none;
+    color-scheme: dark;
+  }
+
+  .sort-select-primary {
+    min-width: 10.5rem;
+  }
+
+  .sort-direction-toggle {
+    min-width: 6.6rem;
+    padding: 0.75rem 0.9rem;
+    border: none;
+    border-left: 1px solid #334155;
+    background: transparent;
     color: #e2e8f0;
     font-size: 0.95rem;
     cursor: pointer;
@@ -707,7 +787,18 @@
 
   .sort-select:focus {
     outline: none;
-    border-color: #0ea5e9;
+    background: rgba(14, 165, 233, 0.08);
+  }
+
+  .sort-direction-toggle:hover,
+  .sort-direction-toggle:focus-visible {
+    outline: none;
+    background: rgba(14, 165, 233, 0.08);
+  }
+
+  .sort-select option {
+    background: #0f172a;
+    color: #e2e8f0;
   }
 
   .template-section {
@@ -963,6 +1054,22 @@
   @media (max-width: 900px) {
     .page-header {
       flex-direction: column;
+    }
+
+    .search-bar {
+      flex-wrap: wrap;
+    }
+
+    .sort-controls {
+      width: 100%;
+    }
+
+    .sort-group {
+      width: 100%;
+    }
+
+    .sort-controls .sort-select {
+      flex: 1;
     }
 
     .personas-grid {
