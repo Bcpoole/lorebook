@@ -11,6 +11,7 @@
   import WorldStoryPage from './lib/WorldStoryPage.svelte'
   import LocationPage from './lib/LocationPage.svelte'
   import ObjectPage from './lib/ObjectPage.svelte'
+  import PersonaPage from './lib/PersonaPage.svelte'
   import { DraftSyncController } from './lib/draftSync'
   import { PollingQueue } from './lib/pollingQueue'
 
@@ -98,6 +99,7 @@
       outputFormat: 'markdown',
       multilineReplies: true,
       persona: 'blank',
+      addCopyTagOnDuplicate: true,
     },
     experimentation: {
       temperature: 0.7,
@@ -160,6 +162,8 @@
           outputFormat: incoming.outputFormat ?? DEFAULT_EXPERIMENTATION.general.outputFormat,
           multilineReplies: incoming.multilineReplies ?? DEFAULT_EXPERIMENTATION.general.multilineReplies,
           persona: incoming.persona ?? DEFAULT_EXPERIMENTATION.general.persona,
+          addCopyTagOnDuplicate:
+            incoming.addCopyTagOnDuplicate ?? DEFAULT_EXPERIMENTATION.general.addCopyTagOnDuplicate,
         },
         experimentation: {
           temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
@@ -201,9 +205,9 @@
     return found || personaOptions[0] || null
   })
 
-  const selectedPersonaTags = $derived.by(() => {
-    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return ''
-    return selectedPersona.tags.slice(0, 5).join(', ')
+  const selectedPersonaTagList = $derived.by(() => {
+    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return []
+    return selectedPersona.tags.slice(0, 8)
   })
 
   function generateDefaultFilename() {
@@ -985,11 +989,27 @@
 
   async function loadPersonas() {
     try {
-      const res = await fetch('/api/personas', { cache: 'no-store' })
-      if (!res.ok) return
-      const data = await res.json()
+      const [listRes, templateRes] = await Promise.all([
+        fetch('/api/personas', { cache: 'no-store' }),
+        fetch('/api/personas/template', { cache: 'no-store' }),
+      ])
+
+      const data = listRes.ok ? await listRes.json() : []
       const list = Array.isArray(data) ? data : []
-      personaOptions = list.length > 0 ? list : [...FALLBACK_PERSONA_OPTIONS]
+      const template = templateRes.ok ? await templateRes.json() : null
+
+      if (template?.id) {
+        const rest = list.filter((p) => p.id !== template.id)
+        rest.sort((a, b) => {
+          const aFav = a?.favorite ? 1 : 0
+          const bFav = b?.favorite ? 1 : 0
+          if (aFav !== bFav) return bFav - aFav
+          return String(a?.name || '').localeCompare(String(b?.name || ''))
+        })
+        personaOptions = [template, ...rest]
+      } else {
+        personaOptions = list.length > 0 ? list : [...FALLBACK_PERSONA_OPTIONS]
+      }
 
       const selectedId = experimentationLive?.general?.persona || 'blank'
       if (!personaOptions.some((p) => p.id === selectedId)) {
@@ -1816,6 +1836,11 @@
       />
     {:else if activeTab === 'gallery'}
       <GalleryPage />
+    {:else if activeTab === 'personas'}
+      <PersonaPage
+        onpersonaschanged={loadPersonas}
+        addCopyTagOnDuplicate={Boolean(experimentationLive?.general?.addCopyTagOnDuplicate)}
+      />
     {:else if activeTab === 'world-story'}
       <WorldStoryPage />
     {/if}
@@ -1842,7 +1867,15 @@
             {/if}
           </div>
           <div class="persona-description">{selectedPersona.description}</div>
-          <div class="persona-tags">{selectedPersonaTags}</div>
+          <div class="persona-tags">
+            {#if selectedPersonaTagList.length > 0}
+              {#each selectedPersonaTagList as tag}
+                <span class="persona-tag-badge">{tag}</span>
+              {/each}
+            {:else}
+              <span class="persona-tag-empty">No tags</span>
+            {/if}
+          </div>
         {:else}
           <p class="persona-empty">No persona options available.</p>
         {/if}
@@ -2041,11 +2074,28 @@
   }
 
   .persona-tags {
-    font-size: 0.74rem;
-    color: #0f766e;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
     border-top: 1px dashed #cbd5e1;
     padding-top: 0.4rem;
-    overflow-wrap: anywhere;
+  }
+
+  .persona-tag-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    line-height: 1.1;
+    color: #0f766e;
+    border: 1px solid #99f6e4;
+    background: #ecfeff;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+  }
+
+  .persona-tag-empty {
+    font-size: 0.72rem;
+    color: #64748b;
+    font-style: italic;
   }
 
   .persona-empty {
