@@ -227,12 +227,18 @@
 
         <div class="control-group checkbox-row">
           <label for="multiline-replies">Allow Multiline Replies</label>
-          <input type="checkbox" id="multiline-replies" bind:checked={live.general.multilineReplies} />
+          <label class="toggle-switch" for="multiline-replies">
+            <input class="toggle-switch-input" type="checkbox" id="multiline-replies" bind:checked={live.general.multilineReplies} />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
         </div>
 
         <div class="control-group checkbox-row">
           <label for="duplicate-copy-tag">Duplicate adds "copy" tag</label>
-          <input type="checkbox" id="duplicate-copy-tag" bind:checked={live.general.addCopyTagOnDuplicate} />
+          <label class="toggle-switch" for="duplicate-copy-tag">
+            <input class="toggle-switch-input" type="checkbox" id="duplicate-copy-tag" bind:checked={live.general.addCopyTagOnDuplicate} />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
         </div>
 
         <hr class="divider" />
@@ -241,17 +247,26 @@
 
         <div class="control-group checkbox-row">
           <label for="workflow-auto">Auto Mode</label>
-          <input type="checkbox" id="workflow-auto" bind:checked={auto} />
+          <label class="toggle-switch" for="workflow-auto">
+            <input class="toggle-switch-input" type="checkbox" id="workflow-auto" bind:checked={auto} />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
         </div>
 
         <div class="control-group checkbox-row">
           <label for="workflow-streaming">Streaming</label>
-          <input type="checkbox" id="workflow-streaming" bind:checked={streaming} />
+          <label class="toggle-switch" for="workflow-streaming">
+            <input class="toggle-switch-input" type="checkbox" id="workflow-streaming" bind:checked={streaming} />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
         </div>
 
         <div class="control-group checkbox-row">
           <label for="workflow-stats">Show Stats</label>
-          <input type="checkbox" id="workflow-stats" bind:checked={showStats} />
+          <label class="toggle-switch" for="workflow-stats">
+            <input class="toggle-switch-input" type="checkbox" id="workflow-stats" bind:checked={showStats} />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
         </div>
 
         <hr class="divider" />
@@ -567,7 +582,7 @@
     flex: 1;
   }
 
-  input,
+  input:not([type='checkbox']),
   select,
   textarea {
     background: #111827;
@@ -592,6 +607,62 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .toggle-switch {
+    position: relative;
+    display: inline-flex;
+    width: 42px;
+    height: 24px;
+    cursor: pointer;
+  }
+
+  .toggle-switch-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  .toggle-switch-slider {
+    width: 100%;
+    height: 100%;
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 9999px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+    box-sizing: border-box;
+    position: relative;
+  }
+
+  .toggle-switch-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    transition: transform 0.2s ease;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-slider {
+    background: #2563eb;
+    border-color: #3b82f6;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-slider::before {
+    transform: translateX(18px);
+  }
+
+  .toggle-switch-input:focus-visible + .toggle-switch-slider {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
   }
 
   .panel-actions {
