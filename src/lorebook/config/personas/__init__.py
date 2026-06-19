@@ -16,10 +16,15 @@ from lorebook.config.prompts._types import PersonaMeta, PersonaPrompts
 
 
 def get_personas_dir() -> Path:
-    """Get the personas storage directory."""
+    """Get the primary (app-written) personas storage directory."""
     outputs = Path(__file__).resolve().parents[4] / "outputs" / "personas"
     outputs.mkdir(parents=True, exist_ok=True)
     return outputs
+
+
+def get_user_personas_dir() -> Path:
+    """Get the user-curated personas directory (read-only for the app)."""
+    return Path(__file__).resolve().parents[4] / "user" / "personas"
 
 
 def _decode_image_data_uri(image_data: str) -> tuple[bytes, str] | None:
@@ -43,21 +48,18 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def load_persona(persona_id: str) -> PersonaMeta | None:
-    """Load a persona by ID from disk.
-    
-    Returns PersonaMeta with prompts, or None if not found.
-    """
-    persona_dir = get_personas_dir() / persona_id
+def _load_persona_from_dir(persona_id: str, personas_root: Path) -> PersonaMeta | None:
+    """Load a persona from a specific root directory."""
+    persona_dir = personas_root / persona_id
     meta_file = persona_dir / "meta.json"
-    
+
     if not meta_file.exists():
         return None
-    
+
     try:
         with open(meta_file) as f:
             data = json.load(f)
-        
+
         prompts = PersonaPrompts()
         prompts_file = persona_dir / "prompts.json"
         if prompts_file.exists():
@@ -66,7 +68,7 @@ def load_persona(persona_id: str) -> PersonaMeta | None:
                 if not isinstance(prompts_data, dict):
                     raise ValueError("prompts.json must be a prompt-key dictionary")
                 prompts = PersonaPrompts.from_dict(prompts_data)
-        
+
         return PersonaMeta(
             id=data["id"],
             name=data["name"],
@@ -76,10 +78,25 @@ def load_persona(persona_id: str) -> PersonaMeta | None:
             avatar=data.get("avatar", ""),
             created=str(data.get("created", "")),
             modified=str(data.get("modified", "")),
-            prompts=prompts
+            prompts=prompts,
         )
     except (json.JSONDecodeError, KeyError, IOError, ValueError):
         return None
+
+
+def load_persona(persona_id: str) -> PersonaMeta | None:
+    """Load a persona by ID from disk.
+
+    Checks outputs/personas/ first, then user/personas/.
+    Returns PersonaMeta with prompts, or None if not found.
+    """
+    persona = _load_persona_from_dir(persona_id, get_personas_dir())
+    if persona is not None:
+        return persona
+    user_dir = get_user_personas_dir()
+    if user_dir.is_dir():
+        return _load_persona_from_dir(persona_id, user_dir)
+    return None
 
 
 def save_persona(persona: PersonaMeta) -> bool:
@@ -152,19 +169,26 @@ def save_persona(persona: PersonaMeta) -> bool:
 
 
 def list_personas() -> list[PersonaMeta]:
-    """List all persisted personas."""
-    personas = []
-    personas_dir = get_personas_dir()
-    
-    if not personas_dir.exists():
-        return personas
-    
-    for persona_dir in personas_dir.iterdir():
-        if persona_dir.is_dir():
-            persona = load_persona(persona_dir.name)
+    """List all persisted personas from outputs/personas/ and user/personas/."""
+    seen_ids: set[str] = set()
+    personas: list[PersonaMeta] = []
+
+    def _collect_from_dir(root: Path) -> None:
+        if not root.exists():
+            return
+        for persona_dir in root.iterdir():
+            if not persona_dir.is_dir():
+                continue
+            pid = persona_dir.name
+            if pid in seen_ids:
+                continue  # outputs/ takes priority; skip user/ duplicate
+            persona = _load_persona_from_dir(pid, root)
             if persona:
+                seen_ids.add(pid)
                 personas.append(persona)
-    
+
+    _collect_from_dir(get_personas_dir())
+    _collect_from_dir(get_user_personas_dir())
     return sorted(personas, key=lambda p: p.name)
 
 

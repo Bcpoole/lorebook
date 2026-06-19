@@ -88,11 +88,11 @@ The gallery component (`ui/src/lib/GalleryPage.svelte`) provides unified browsin
 
 ## Artifact Storage Strategy
 
-All artifacts (world, character, story, location, object) follow a unified persistence pattern:
+All artifacts (world, character, story, location, object) follow a unified persistence pattern across two root directories: `outputs/` (app-written) and `user/` (user-curated, read-only for the app).
 
 ### Directory Structure
 ```
-outputs/
+outputs/               ← app auto-writes here
   ├── world/
   │   ├── {run_id}/
   │   │   ├── artifact.json       # state.world_setting, state.characters
@@ -121,6 +121,15 @@ outputs/
       │   ├── artifact.json       # story_artifact with objects[0]
       │   └── {run_id}_objects_1.png
       └── _drafts/latest.json
+
+user/                  ← user places content here manually; app never auto-writes
+  ├── world/           # Same artifact.json structure as outputs/world/
+  ├── character/
+  ├── story/
+  ├── location/
+  ├── object/
+  ├── personas/        # Persona sub-directories (meta.json + prompts.json)
+  └── backgrounds/     # Custom UI background images
 ```
 
 ### Image Co-location
@@ -148,5 +157,32 @@ When `POST /api/save` receives a story artifact with metadata `source: "story"`:
 - LLM calls are made through `call_local_llm` to a local endpoint at `http://localhost:5001`.
 - `LOREBOOK_LLM_ENDPOINT` env var overrides the default endpoint.
 - Add file export implementation inside `save_assets_node`.
-- Generated outputs go to `outputs/` (gitignored).
+- Generated outputs go to `outputs/` (gitignored, app-written).
+
+## User Directory (`user/`)
+
+The `user/` directory is a permanent, gitignored sibling of `outputs/` for user-curated content. The app **reads** from it but never auto-writes to it.
+
+### Structure (mirrors `outputs/`)
+```
+user/
+  ├── world/        # Curated world artifacts
+  ├── character/    # Curated character artifacts
+  ├── story/        # Curated story artifacts
+  ├── location/     # Curated location artifacts
+  ├── object/       # Curated object artifacts
+  ├── personas/     # Curated personas (meta.json + prompts.json per subdirectory)
+  └── backgrounds/  # Custom UI background images (served at /user-assets/backgrounds/)
+```
+
+### Load Priority
+- Gallery, Personas page, and Lore pages scan **both** `outputs/` and `user/`.
+- If the same artifact run ID exists in both, `outputs/` takes priority.
+- `outputs/personas/` takes priority over `user/personas/` for the same persona ID.
+
+### API
+- `POST /api/user-assets/upload/background` — upload a background image (stores to `user/backgrounds/`)
+- `GET /api/user-assets/list/backgrounds` — list uploaded backgrounds
+- `DELETE /api/user-assets/backgrounds/{filename}` — remove a background
+- `/user-assets/` — static file mount serving the entire `user/` directory
 

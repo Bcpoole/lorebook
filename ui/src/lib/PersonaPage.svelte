@@ -393,7 +393,7 @@
 <div class="persona-page">
   <div class="page-header">
     <div>
-      <h1>🎭 Personas</h1>
+      <h1>Personas</h1>
       <p class="subtitle">
         Create and manage AI personas with custom system prompts
       </p>

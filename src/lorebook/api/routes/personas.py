@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from lorebook.config.prompts import AVATARS_DIR, list_personas
-from lorebook.config.personas import get_personas_dir, load_persona
+from lorebook.config.personas import get_personas_dir, get_user_personas_dir, load_persona
 
 router = APIRouter(prefix="/personas", tags=["personas"])
 
@@ -53,6 +53,13 @@ async def get_persona_avatar(persona_id: str) -> FileResponse:
         persisted_candidate = (persisted_root / avatar_name).resolve()
         if persisted_root in persisted_candidate.parents and persisted_candidate.is_file():
             candidate = persisted_candidate
+
+    # User-curated personas: avatar file is colocated in user/personas/{id}/
+    if candidate is None:
+        user_root = (get_user_personas_dir() / persona_id).resolve()
+        user_candidate = (user_root / avatar_name).resolve()
+        if user_root in user_candidate.parents and user_candidate.is_file():
+            candidate = user_candidate
 
     # Built-in personas: avatar file is under config/prompts/avatars/
     if candidate is None:

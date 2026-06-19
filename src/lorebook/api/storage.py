@@ -43,6 +43,11 @@ def get_outputs_root() -> Path:
     return Path(__file__).resolve().parents[3] / "outputs"
 
 
+def get_user_root() -> Path:
+    """Persistent user-curated artifact directory (gitignored, never auto-written by the app)."""
+    return Path(__file__).resolve().parents[3] / "user"
+
+
 def _normalize_artifact_type(value: Any) -> str:
     candidate = str(value or "").strip().lower()
     if candidate in ARTIFACT_TYPES:
@@ -350,8 +355,14 @@ def _clear_artifact_dir(path: Path) -> None:
 def _iter_run_files() -> list[tuple[Path, str]]:
     candidates: list[tuple[Path, str]] = []
     for artifact_type in ARTIFACT_TYPES:
+        # Primary outputs directory (app-written)
         for run_path in get_runs_dir(artifact_type).glob("*/artifact.json"):
             candidates.append((run_path, artifact_type))
+        # User-curated directory (manually placed, permanent)
+        user_type_dir = get_user_root() / artifact_type
+        if user_type_dir.is_dir():
+            for run_path in user_type_dir.glob("*/artifact.json"):
+                candidates.append((run_path, artifact_type))
     return candidates
 
 
@@ -365,6 +376,10 @@ def _resolve_run_path(run_id: str, artifact_type: str | None = None) -> tuple[Pa
         direct_path = _artifact_record_path(normalized_run_id, normalized_artifact_type)
         if direct_path.exists():
             return direct_path, normalized_artifact_type
+        # Also check user/ directory
+        user_path = get_user_root() / normalized_artifact_type / normalized_run_id / "artifact.json"
+        if user_path.exists():
+            return user_path, normalized_artifact_type
         return None
 
     matches: list[tuple[Path, str]] = []
@@ -422,13 +437,20 @@ def _safe_artifact_image_name(image_file: str) -> str | None:
 
 
 def _image_data_from_file(image_file: str, artifact_type: str, run_id: str) -> str:
-    """Load image bytes from disk and return a data URI."""
+    """Load image bytes from disk and return a data URI.
+
+    Checks outputs/{type}/{run_id}/ first, then user/{type}/{run_id}/.
+    """
     image_name = _safe_artifact_image_name(image_file)
     if not image_name:
         return ""
 
-    image_path = _artifact_dir(run_id, artifact_type) / image_name
-    if not image_path.exists() or not image_path.is_file():
+    candidates = [
+        _artifact_dir(run_id, artifact_type) / image_name,
+        get_user_root() / artifact_type / run_id / image_name,
+    ]
+    image_path = next((p for p in candidates if p.exists() and p.is_file()), None)
+    if image_path is None:
         return ""
 
     try:

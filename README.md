@@ -15,7 +15,8 @@ Lorebook is a local-first Python app for generating a world setting and companio
 - `ui/`: Svelte + Vite frontend.
 - `scripts/dev.ps1`: Starts the backend and frontend together on Windows.
 - `scripts/dev.sh`: Starts the backend and frontend together on Linux/macOS.
-- `outputs/`: Saved run artifacts and generated assets.
+- `outputs/`: Saved run artifacts and generated assets (gitignored, app-written).
+- `user/`: Permanent user-curated artifacts and custom assets (gitignored). The app reads from here alongside `outputs/` but never auto-writes to it — place content here to keep it across resets.
 - `requirements.txt`: Runtime dependencies.
 - `requirements-dev.txt`: Dev and test dependencies.
 - `AGENTS.md`: Agent/role documentation for the pipeline.
@@ -141,6 +142,25 @@ Artifacts are organized by type with subdirectories and co-located resources:
 **Story Sub-Artifact Extraction**: When a story artifact is saved, locations, objects, and character details are automatically extracted and saved as separate artifacts if they contain meaningful content (name + description). Each becomes its own gallery entry, indexed by type and order.
 
 Drafts are stored per type under each folder's `_drafts/` subdirectory (e.g., `outputs/world/_drafts/latest.json`).
+
+## User-Curated Artifact Directory (`user/`)
+
+The `user/` directory mirrors the `outputs/` subdirectory structure and is `.gitignore`'d but more permanent than `outputs/`. The app reads from it alongside `outputs/` but **never auto-writes to it** — you place content here manually to keep it across resets or when sharing a curated set of artifacts.
+
+```
+user/
+  ├── world/          # Curated world artifacts (same format as outputs/world/)
+  ├── character/      # Curated character artifacts
+  ├── story/          # Curated story artifacts
+  ├── location/       # Curated location artifacts
+  ├── object/         # Curated object artifacts
+  ├── personas/       # Curated personas (meta.json + prompts.json per sub-directory)
+  └── backgrounds/    # Custom background images for the UI shell
+```
+
+The **Gallery**, **Personas**, and **Lore** pages load from both `outputs/` and `user/` automatically. If the same artifact ID exists in both, `outputs/` takes priority.
+
+Custom background images (uploaded via the UI's General settings) are stored in `user/backgrounds/` and served at `/user-assets/backgrounds/<filename>`.
 
 ## Artifact Gallery & Editing
 
