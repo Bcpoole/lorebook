@@ -7,6 +7,7 @@
     persona = {},
     variant = 'default',
     highlightFavoriteBorder = false,
+    viewMode = 'detailed',
     onfavorite = () => {},
     onedit = () => {},
     onduplicate = () => {},
@@ -31,76 +32,150 @@
 
 <div
   class={`persona-card persona-card-variant-${variant}`}
+  class:persona-card-gallery={viewMode === 'gallery'}
   class:hovering={isHovering}
   class:favorite-highlight={highlightFavoriteBorder && Boolean(persona?.favorite)}
 >
-  <div class="card-header">
-    <div class="name-row">
+  {#if viewMode === 'gallery'}
+    <div class="gallery-media">
       {#if getAvatarSrc()}
-        <img class="avatar-thumb" src={getAvatarSrc()} alt={`${persona.name} avatar`} />
+        <img class="gallery-avatar" src={getAvatarSrc()} alt={`${persona.name} avatar`} />
+      {:else}
+        <div class="gallery-avatar-placeholder" aria-label={`${persona.name} avatar missing`}>?</div>
       {/if}
-      <h3 class="persona-name">{persona.name}</h3>
+
+      <div class="gallery-name-overlay">
+        <h3 class="persona-name">{persona.name}</h3>
+      </div>
+
+      <div class="header-actions gallery-actions">
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
+          title={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
+          onclick={(e) => {
+            e.stopPropagation()
+            onfavorite()
+          }}
+        >
+          <span class="icon-star">{persona?.favorite ? '★' : '☆'}</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label="Duplicate persona"
+          title="Duplicate persona"
+          onclick={(e) => {
+            e.stopPropagation()
+            onduplicate()
+          }}
+        >
+          ⧉
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label="Edit persona"
+          title="Edit persona"
+          onclick={(e) => {
+            e.stopPropagation()
+            onedit()
+          }}
+        >
+          ✏️
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-danger"
+          aria-label="Delete persona"
+          title="Delete persona"
+          onclick={handleDelete}
+        >
+          🗑️
+        </button>
+      </div>
     </div>
-    <div class="header-actions">
-      <button
-        type="button"
-        class="btn btn-icon btn-secondary"
-        aria-label={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
-        title={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
-        onclick={(e) => {
-          e.stopPropagation()
-          onfavorite()
-        }}
-      >
-        <span class="icon-star">{persona?.favorite ? '★' : '☆'}</span>
-      </button>
 
-      <button
-        type="button"
-        class="btn btn-icon btn-secondary"
-        aria-label="Duplicate persona"
-        title="Duplicate persona"
-        onclick={(e) => {
-          e.stopPropagation()
-          onduplicate()
-        }}
-      >
-        ⧉
-      </button>
+    {#if persona.tags && persona.tags.length > 0}
+      <div class="tags tags-gallery">
+        {#each persona.tags as tag}
+          <span class="tag">{tag}</span>
+        {/each}
+      </div>
+    {/if}
+  {:else}
+    <div class="card-header">
+      <div class="name-row">
+        {#if getAvatarSrc()}
+          <img class="avatar-thumb" src={getAvatarSrc()} alt={`${persona.name} avatar`} />
+        {/if}
+        <h3 class="persona-name">{persona.name}</h3>
+      </div>
+      <div class="header-actions">
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
+          title={persona?.favorite ? 'Unfavorite persona' : 'Favorite persona'}
+          onclick={(e) => {
+            e.stopPropagation()
+            onfavorite()
+          }}
+        >
+          <span class="icon-star">{persona?.favorite ? '★' : '☆'}</span>
+        </button>
 
-      <button
-        type="button"
-        class="btn btn-icon btn-secondary"
-        aria-label="Edit persona"
-        title="Edit persona"
-        onclick={(e) => {
-          e.stopPropagation()
-          onedit()
-        }}
-      >
-        ✏️
-      </button>
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label="Duplicate persona"
+          title="Duplicate persona"
+          onclick={(e) => {
+            e.stopPropagation()
+            onduplicate()
+          }}
+        >
+          ⧉
+        </button>
 
-      <button
-        type="button"
-        class="btn btn-icon btn-danger"
-        aria-label="Delete persona"
-        title="Delete persona"
-        onclick={handleDelete}
-      >
-        🗑️
-      </button>
+        <button
+          type="button"
+          class="btn btn-icon btn-secondary"
+          aria-label="Edit persona"
+          title="Edit persona"
+          onclick={(e) => {
+            e.stopPropagation()
+            onedit()
+          }}
+        >
+          ✏️
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-danger"
+          aria-label="Delete persona"
+          title="Delete persona"
+          onclick={handleDelete}
+        >
+          🗑️
+        </button>
+      </div>
     </div>
-  </div>
 
-  <p class="description">{persona.description}</p>
+    <p class="description">{persona.description}</p>
 
-  {#if persona.tags && persona.tags.length > 0}
-    <div class="tags">
-      {#each persona.tags as tag}
-        <span class="tag">{tag}</span>
-      {/each}
-    </div>
+    {#if persona.tags && persona.tags.length > 0}
+      <div class="tags">
+        {#each persona.tags as tag}
+          <span class="tag">{tag}</span>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -336,6 +411,88 @@
 
   .persona-card-variant-contrast .btn-danger {
     color: #fca5a5;
+  }
+
+  .persona-card-gallery {
+    padding: 0.6rem;
+    gap: 0.6rem;
+  }
+
+  .gallery-media {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    aspect-ratio: 1 / 1;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: radial-gradient(circle at top, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+  }
+
+  .gallery-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .gallery-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    font-size: 2.4rem;
+    font-weight: 700;
+    background: linear-gradient(160deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.98));
+  }
+
+  .gallery-name-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 0.45rem 0.6rem 0.65rem;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(2, 6, 23, 0.86) 0%, rgba(2, 6, 23, 0.15) 100%);
+  }
+
+  .persona-card-gallery .persona-name {
+    font-size: 1rem;
+    line-height: 1.2;
+    text-shadow: 0 1px 2px rgba(2, 6, 23, 0.75);
+  }
+
+  .gallery-actions {
+    position: absolute;
+    bottom: 0.45rem;
+    right: 0.45rem;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  .persona-card-gallery .btn-icon {
+    width: 1.8rem;
+    height: 1.8rem;
+    font-size: 0.92rem;
+  }
+
+  .persona-card-gallery .btn-secondary,
+  .persona-card-gallery .btn-danger {
+    border-color: rgba(100, 116, 139, 0.45);
+    background: rgba(15, 23, 42, 0.65);
+  }
+
+  .tags-gallery {
+    justify-content: center;
+    min-height: 1.7rem;
+  }
+
+  .tags-gallery .tag {
+    font-size: 0.74rem;
+    padding: 0.18rem 0.5rem;
   }
 
   .card-header {

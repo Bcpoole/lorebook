@@ -37,6 +37,7 @@
   let searchQuery = $state("");
   let sortBy = $state("name"); // 'name', 'created', 'modified'
   let sortDirection = $state("asc"); // 'asc' | 'desc'
+  let viewMode = $state("detailed"); // 'detailed' | 'gallery'
 
   onMount(async () => {
     await loadPersonas();
@@ -451,6 +452,32 @@
         </button>
       </div>
     </div>
+
+    <div class="view-group">
+      <span class="sort-label">View</span>
+      <div class="view-toggle" role="group" aria-label="Persona view mode">
+        <button
+          type="button"
+          class="view-toggle-btn"
+          class:active={viewMode === "detailed"}
+          onclick={() => (viewMode = "detailed")}
+          title="Detailed view"
+          aria-label="Detailed view"
+        >
+          ▤
+        </button>
+        <button
+          type="button"
+          class="view-toggle-btn"
+          class:active={viewMode === "gallery"}
+          onclick={() => (viewMode = "gallery")}
+          title="Gallery view"
+          aria-label="Gallery view"
+        >
+          ▦
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="template-section" class:template-section-collapsed={!templateSectionExpanded}>
@@ -536,11 +563,12 @@
             {#if favoritePersonas.length === 0}
               <p class="persona-section-empty">No favorites yet.</p>
             {:else}
-              <div class="personas-grid">
+              <div class="personas-grid" class:personas-grid-gallery={viewMode === "gallery"}>
                 {#each favoritePersonas as persona (persona.id)}
                   <PersonaCard
                     {persona}
                     variant="glow"
+                    {viewMode}
                     onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
                     onedit={() => handleEditPersona({ detail: { persona } })}
                     onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
@@ -559,12 +587,13 @@
         {#if allPersonas.length === 0}
           <p class="persona-section-empty">No personas.</p>
         {:else}
-          <div class="personas-grid">
+          <div class="personas-grid" class:personas-grid-gallery={viewMode === "gallery"}>
             {#each allPersonas as persona (persona.id)}
               <PersonaCard
                 {persona}
                 variant="glow"
                 highlightFavoriteBorder={true}
+                {viewMode}
                 onfavorite={() => handleToggleFavoritePersona({ detail: { persona } })}
                 onedit={() => handleEditPersona({ detail: { persona } })}
                 onduplicate={() => handleDuplicatePersona({ detail: { persona } })}
@@ -710,6 +739,12 @@
     gap: 0.55rem;
   }
 
+  .view-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
   .sort-label {
     color: #94a3b8;
     font-size: 0.84rem;
@@ -799,6 +834,42 @@
   .sort-select option {
     background: #0f172a;
     color: #e2e8f0;
+  }
+
+  .view-toggle {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #1e293b;
+  }
+
+  .view-toggle-btn {
+    border: none;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.55rem 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 2.5rem;
+  }
+
+  .view-toggle-btn + .view-toggle-btn {
+    border-left: 1px solid #334155;
+  }
+
+  .view-toggle-btn:hover {
+    background: rgba(14, 165, 233, 0.08);
+    color: #e2e8f0;
+  }
+
+  .view-toggle-btn.active {
+    background: rgba(56, 189, 248, 0.18);
+    color: #e0f2fe;
   }
 
   .template-section {
@@ -1051,6 +1122,11 @@
     gap: 1.5rem;
   }
 
+  .personas-grid.personas-grid-gallery {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+
   @media (max-width: 900px) {
     .page-header {
       flex-direction: column;
@@ -1068,7 +1144,20 @@
       width: 100%;
     }
 
+    .view-group {
+      width: 100%;
+      justify-content: space-between;
+    }
+
     .sort-controls .sort-select {
+      flex: 1;
+    }
+
+    .view-toggle {
+      flex: 1;
+    }
+
+    .view-toggle-btn {
       flex: 1;
     }
 
