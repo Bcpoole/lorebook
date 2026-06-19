@@ -26,10 +26,10 @@ jobs:
           python -m pip install -e .
 
       - name: Lint
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Test
-        run: pytest -q
+        run: python -m pytest -q
 
   frontend:
     name: Frontend (build + test)
