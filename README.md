@@ -16,7 +16,7 @@ Lorebook is a local-first Python app for generating a world setting and companio
 - `scripts/dev.ps1`: Starts the backend and frontend together on Windows.
 - `scripts/dev.sh`: Starts the backend and frontend together on Linux/macOS.
 - `outputs/`: Saved run artifacts and generated assets (gitignored, app-written).
-- `user/`: Permanent user-curated artifacts and custom assets (gitignored). The app reads from here alongside `outputs/` but never auto-writes to it — place content here to keep it across resets.
+- `user/`: Permanent user-curated content (gitignored). Split into two sub-directories: `user/artefacts/` mirrors `outputs/` for curated run data, and `user/configs/` holds personas and UI assets (backgrounds etc.). The app reads from both but never auto-writes to `user/`.
 - `requirements.txt`: Runtime dependencies.
 - `requirements-dev.txt`: Dev and test dependencies.
 - `AGENTS.md`: Agent/role documentation for the pipeline.
@@ -102,8 +102,7 @@ Set-Location ..
 ## Local config templates (open-source-safe)
 
 - Prompts load `src/lorebook/config/prompts/blank.py` when present, otherwise `src/lorebook/config/prompts/_template.py`.
-- SD styles load `src/lorebook/config/sd/styles.py` when present, otherwise `src/lorebook/config/sd/_template.py`.
-- Non-underscore files in those config folders are ignored so local/private variants stay untracked.
+- SD styles load from `user/configs/sd/styles.json` first (see `user/configs/sd/_example.json` for the format), then fall back to `src/lorebook/config/sd/styles.py` if present, then `src/lorebook/config/sd/_template.py`.
 
 ## API Endpoints
 
@@ -143,24 +142,28 @@ Artifacts are organized by type with subdirectories and co-located resources:
 
 Drafts are stored per type under each folder's `_drafts/` subdirectory (e.g., `outputs/world/_drafts/latest.json`).
 
-## User-Curated Artifact Directory (`user/`)
+## User-Curated Directory (`user/`)
 
-The `user/` directory mirrors the `outputs/` subdirectory structure and is `.gitignore`'d but more permanent than `outputs/`. The app reads from it alongside `outputs/` but **never auto-writes to it** — you place content here manually to keep it across resets or when sharing a curated set of artifacts.
+The `user/` directory is `.gitignore`'d but more permanent than `outputs/`. The app reads from it alongside `outputs/` but **never auto-writes to it** — place content here manually to keep it across resets or to share a curated set of artifacts/personas.
+
+It is split into two sub-directories:
 
 ```
 user/
-  ├── world/          # Curated world artifacts (same format as outputs/world/)
-  ├── character/      # Curated character artifacts
-  ├── story/          # Curated story artifacts
-  ├── location/       # Curated location artifacts
-  ├── object/         # Curated object artifacts
-  ├── personas/       # Curated personas (meta.json + prompts.json per sub-directory)
-  └── backgrounds/    # Custom background images for the UI shell
+  ├── artefacts/      # Curated run data (mirrors outputs/ structure)
+  │   ├── world/      # Same artifact.json format as outputs/world/
+  │   ├── character/
+  │   ├── story/
+  │   ├── location/
+  │   └── object/
+  └── configs/        # UI configuration and custom assets
+      ├── personas/   # Curated personas (meta.json + prompts.json per sub-directory)
+      └── backgrounds/# Custom background images for the UI shell
 ```
 
-The **Gallery**, **Personas**, and **Lore** pages load from both `outputs/` and `user/` automatically. If the same artifact ID exists in both, `outputs/` takes priority.
+The **Gallery**, **Personas**, and **Lore** pages load from both `outputs/` and `user/artefacts/` automatically. If the same artifact ID exists in both, `outputs/` takes priority.
 
-Custom background images (uploaded via the UI's General settings) are stored in `user/backgrounds/` and served at `/user-assets/backgrounds/<filename>`.
+Custom background images (uploaded via the UI's General settings) are stored in `user/configs/backgrounds/` and served at `/user-assets/backgrounds/<filename>`.
 
 ## Artifact Gallery & Editing
 

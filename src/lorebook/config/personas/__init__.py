@@ -24,7 +24,7 @@ def get_personas_dir() -> Path:
 
 def get_user_personas_dir() -> Path:
     """Get the user-curated personas directory (read-only for the app)."""
-    return Path(__file__).resolve().parents[4] / "user" / "personas"
+    return Path(__file__).resolve().parents[4] / "user" / "configs" / "personas"
 
 
 def _decode_image_data_uri(image_data: str) -> tuple[bytes, str] | None:

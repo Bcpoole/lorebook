@@ -123,13 +123,16 @@ outputs/               ← app auto-writes here
       └── _drafts/latest.json
 
 user/                  ← user places content here manually; app never auto-writes
-  ├── world/           # Same artifact.json structure as outputs/world/
-  ├── character/
-  ├── story/
-  ├── location/
-  ├── object/
-  ├── personas/        # Persona sub-directories (meta.json + prompts.json)
-  └── backgrounds/     # Custom UI background images
+  ├── artefacts/       # Curated run data (same artifact.json format as outputs/)
+  │   ├── world/
+  │   ├── character/
+  │   ├── story/
+  │   ├── location/
+  │   └── object/
+  └── configs/         # UI configuration and custom assets
+      ├── personas/    # Persona sub-directories (meta.json + prompts.json)
+      ├── sd/          # Custom SD styles (copy _example.json → styles.json to activate)
+      └── backgrounds/ # Custom UI background images
 ```
 
 ### Image Co-location
@@ -163,26 +166,32 @@ When `POST /api/save` receives a story artifact with metadata `source: "story"`:
 
 The `user/` directory is a permanent, gitignored sibling of `outputs/` for user-curated content. The app **reads** from it but never auto-writes to it.
 
-### Structure (mirrors `outputs/`)
+### Structure
+
 ```
 user/
-  ├── world/        # Curated world artifacts
-  ├── character/    # Curated character artifacts
-  ├── story/        # Curated story artifacts
-  ├── location/     # Curated location artifacts
-  ├── object/       # Curated object artifacts
-  ├── personas/     # Curated personas (meta.json + prompts.json per subdirectory)
-  └── backgrounds/  # Custom UI background images (served at /user-assets/backgrounds/)
+  ├── artefacts/      # Curated run data — mirrors outputs/ structure
+  │   ├── world/
+  │   ├── character/
+  │   ├── story/
+  │   ├── location/
+  │   └── object/
+  └── configs/        # UI configuration and custom assets
+      ├── personas/   # Curated personas (meta.json + prompts.json per subdirectory)
+      ├── sd/         # Custom SD styles — copy `_example.json` → `styles.json` to activate
+      └── backgrounds/# Custom UI background images (served at /user-assets/backgrounds/)
 ```
 
 ### Load Priority
-- Gallery, Personas page, and Lore pages scan **both** `outputs/` and `user/`.
+- Gallery, Personas page, and Lore pages scan **both** `outputs/` and `user/artefacts/`.
 - If the same artifact run ID exists in both, `outputs/` takes priority.
-- `outputs/personas/` takes priority over `user/personas/` for the same persona ID.
+- `outputs/personas/` takes priority over `user/configs/personas/` for the same persona ID.
 
 ### API
-- `POST /api/user-assets/upload/background` — upload a background image (stores to `user/backgrounds/`)
+- `POST /api/user-assets/upload/background` — upload a background image (stores to `user/configs/backgrounds/`)
 - `GET /api/user-assets/list/backgrounds` — list uploaded backgrounds
 - `DELETE /api/user-assets/backgrounds/{filename}` — remove a background
-- `/user-assets/` — static file mount serving the entire `user/` directory
+- `/user-assets/` — static file mount serving `user/configs/`
+
+**SD styles**: place `styles.json` in `user/configs/sd/` (see `_example.json` for format). Load order: `user/configs/sd/styles.json` → `src/lorebook/config/sd/styles.py` → built-in `_template.py`.
 

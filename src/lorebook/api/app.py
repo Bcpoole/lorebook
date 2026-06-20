@@ -29,10 +29,10 @@ def create_app() -> FastAPI:
     app.include_router(personas.router, prefix="/api")
     app.include_router(user_assets.router, prefix="/api")
 
-    # Serve user-uploaded assets (backgrounds etc.) from the persistent user/ directory.
-    user_dir = Path(__file__).resolve().parents[3] / "user"
-    user_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/user-assets", StaticFiles(directory=str(user_dir)), name="user-assets")
+    # Serve user-uploaded config assets (backgrounds etc.) from user/configs/.
+    user_configs_dir = Path(__file__).resolve().parents[3] / "user" / "configs"
+    user_configs_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/user-assets", StaticFiles(directory=str(user_configs_dir)), name="user-assets")
 
     # Serve compiled Svelte build in production.
     dist_dir = Path(__file__).resolve().parents[3] / "ui" / "dist"

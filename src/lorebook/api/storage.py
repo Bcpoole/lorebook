@@ -44,8 +44,11 @@ def get_outputs_root() -> Path:
 
 
 def get_user_root() -> Path:
-    """Persistent user-curated artifact directory (gitignored, never auto-written by the app)."""
-    return Path(__file__).resolve().parents[3] / "user"
+    """Persistent user-curated artefact directory (gitignored, never auto-written by the app).
+    
+    Lives at user/artefacts/ and mirrors the outputs/ subdirectory structure.
+    """
+    return Path(__file__).resolve().parents[3] / "user" / "artefacts"
 
 
 def _normalize_artifact_type(value: Any) -> str:
