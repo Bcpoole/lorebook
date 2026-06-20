@@ -16,7 +16,7 @@ from typing import Final
 
 def _load_user_styles_json() -> tuple[dict[str, dict[str, str]], str] | None:
     """Load styles from user/configs/sd/styles.json if it exists."""
-    json_path = Path(__file__).resolve().parents[5] / "user" / "configs" / "sd" / "styles.json"
+    json_path = Path(__file__).resolve().parents[4] / "user" / "configs" / "sd" / "styles.json"
     if not json_path.is_file():
         return None
     try:

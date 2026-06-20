@@ -1213,6 +1213,7 @@ async def get_sd_styles() -> Dict[str, Any]:
     return {
         "default_style": DEFAULT_SD_STYLE,
         "styles": sorted(SD_STYLES.keys()),
+        "style_data": {k: {"prompt": v.get("prompt", ""), "negative_prompt": v.get("negative_prompt", "")} for k, v in SD_STYLES.items()},
     }
 
 

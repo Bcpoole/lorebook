@@ -14,7 +14,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 
 
 def get_user_assets_root() -> Path:
-    root = Path(__file__).resolve().parents[5] / "user" / "configs"
+    root = Path(__file__).resolve().parents[4] / "user" / "configs"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

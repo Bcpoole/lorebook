@@ -4,6 +4,7 @@
     saved = $bindable({}),
     isDirty = $bindable(false),
     sdStyleOptions = ['balanced'],
+    sdStyleData = {},
     auto = $bindable(false),
     streaming = $bindable(true),
     showStats = $bindable(false),
@@ -18,6 +19,8 @@
 
   let activeTab = $state('experiment')
   let lastEditedDimension = $state(null)
+
+  let selectedStyleData = $derived(sdStyleData[live?.sd?.style] ?? null)
   let uiShellToneOpen = $state(false)
   let bgImageUploading = $state(false)
   let bgImageUploadError = $state('')
@@ -484,6 +487,17 @@
           </select>
         </div>
 
+        {#if selectedStyleData}
+          <div class="control-group">
+            <label>Style Prompt</label>
+            <textarea class="style-preview" readonly rows="3">{selectedStyleData.prompt}</textarea>
+          </div>
+          <div class="control-group">
+            <label>Style Negative Prompt</label>
+            <textarea class="style-preview" readonly rows="3">{selectedStyleData.negative_prompt}</textarea>
+          </div>
+        {/if}
+
         <div class="control-grid two-col">
           <div class="control-group">
             <label for="sd-steps">Steps (1-60)</label>
@@ -871,6 +885,17 @@
     border-radius: 6px;
     padding: 0.35rem 0.45rem;
     font-size: 0.78rem;
+  }
+
+  .style-preview {
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    cursor: default;
+    opacity: 0.75;
+    font-family: monospace;
+    font-size: 0.72rem;
+    line-height: 1.4;
   }
 
   .number-input {

@@ -48,6 +48,7 @@
   let outputReview = $state(null)
   let reviewSummaryRequestId = 0
   let sdStyleOptions = $state(['balanced'])
+  let sdStyleData = $state({})
   const FALLBACK_PERSONA_OPTIONS = [{
     id: 'blank',
     name: 'Blank',
@@ -1016,6 +1017,9 @@
       const data = await res.json()
       const styles = Array.isArray(data?.styles) && data.styles.length > 0 ? data.styles : ['balanced']
       sdStyleOptions = styles
+      if (data?.style_data && typeof data.style_data === 'object') {
+        sdStyleData = data.style_data
+      }
       const defaultStyle = data?.default_style || styles[0]
       if (!experimentationLive.sd?.style || !styles.includes(experimentationLive.sd.style)) {
         experimentationLive = {
@@ -1780,6 +1784,7 @@
       bind:showStats
       collapsed={leftPanelCollapsed}
       sdStyleOptions={sdStyleOptions}
+      sdStyleData={sdStyleData}
       onSave={saveExperimentation}
       onCancel={cancelExperimentation}
       onSaveSd={saveExperimentation}
