@@ -20,7 +20,24 @@
   let activeTab = $state('experiment')
   let lastEditedDimension = $state(null)
 
-  let selectedStyleData = $derived(sdStyleData[live?.sd?.style] ?? null)
+  const FALLBACK_STYLE_DATA = {
+    balanced: {
+      prompt: '{prompt}, detailed environment, coherent composition, cinematic color grading, sharp focus, high detail',
+      negative_prompt: '{negative_prompt}, low quality, blurry, bad anatomy, extra limbs, deformed hands, text, watermark, logo, jpeg artifacts',
+    },
+    illustrative: {
+      prompt: '{prompt}, stylized illustration, concept art, painterly texture, dramatic lighting, artstation quality, high detail',
+      negative_prompt: '{negative_prompt}, photorealistic skin pores, noisy background, low detail, bad anatomy, malformed hands, text, watermark',
+    },
+    photo: {
+      prompt: '{prompt}, photorealistic, realistic skin texture, 85mm lens, depth of field, cinematic lighting, ultra detailed',
+      negative_prompt: '{negative_prompt}, cartoon, anime, cgi look, overprocessed, low quality, bad anatomy, extra fingers, text, watermark',
+    },
+  }
+
+  let selectedStyleData = $derived(
+    (sdStyleData[live?.sd?.style] ?? FALLBACK_STYLE_DATA[live?.sd?.style]) ?? null
+  )
   let uiShellToneOpen = $state(false)
   let bgImageUploading = $state(false)
   let bgImageUploadError = $state('')
