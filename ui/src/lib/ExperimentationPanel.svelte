@@ -39,8 +39,6 @@
     (sdStyleData[live?.sd?.style] ?? FALLBACK_STYLE_DATA[live?.sd?.style]) ?? null
   )
   let uiShellToneOpen = $state(false)
-  let bgImageUploading = $state(false)
-  let bgImageUploadError = $state('')
 
   const samplerOptions = [
     'DPM++ 2M',
@@ -77,7 +75,6 @@
       persona: 'blank',
       addCopyTagOnDuplicate: true,
       uiShellTone: 'teal-slate',
-      uiShellImage: '',
     },
     experimentation: {
       temperature: 0.7,
@@ -173,34 +170,6 @@
   function chooseUiShellTone(value) {
     live.general.uiShellTone = value
     uiShellToneOpen = false
-  }
-
-  async function uploadBackgroundImage(event) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    bgImageUploadError = ''
-    bgImageUploading = true
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch('/api/user-assets/upload/background', { method: 'POST', body: form })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail ?? `Upload failed (${res.status})`)
-      }
-      const { url } = await res.json()
-      live.general.uiShellImage = url
-    } catch (e) {
-      bgImageUploadError = e.message ?? 'Upload failed'
-    } finally {
-      bgImageUploading = false
-      event.target.value = ''
-    }
-  }
-
-  function clearBackgroundImage() {
-    live.general.uiShellImage = ''
-    bgImageUploadError = ''
   }
 
   // Sync top-level checkboxes with general config
@@ -326,33 +295,6 @@
                 {/each}
               </div>
             </details>
-          </div>
-        </div>
-
-        <div class="control-group">
-          <label for="bg-image-upload">Background Image</label>
-          <div class="bg-image-row">
-            {#if live.general?.uiShellImage}
-              <div class="bg-image-preview-row">
-                <img class="bg-image-thumb" src={live.general.uiShellImage} alt="Background preview" />
-                <button type="button" class="bg-image-clear-btn" onclick={clearBackgroundImage} title="Remove background image">✕</button>
-              </div>
-            {:else}
-              <label class="bg-image-upload-label" for="bg-image-upload">
-                {bgImageUploading ? 'Uploading…' : 'Choose image…'}
-              </label>
-              <input
-                id="bg-image-upload"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                class="bg-image-file-input"
-                onchange={uploadBackgroundImage}
-                disabled={bgImageUploading}
-              />
-            {/if}
-            {#if bgImageUploadError}
-              <p class="bg-image-error">{bgImageUploadError}</p>
-            {/if}
           </div>
         </div>
 
@@ -828,69 +770,6 @@
   }
 
   /* Background image upload control */
-  .bg-image-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .bg-image-upload-label {
-    display: inline-block;
-    background: #111827;
-    color: #94a3b8;
-    border: 1px dashed #374151;
-    border-radius: 6px;
-    padding: 0.35rem 0.6rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-  }
-
-  .bg-image-upload-label:hover {
-    border-color: #60a5fa;
-    color: #93c5fd;
-  }
-
-  .bg-image-file-input {
-    display: none;
-  }
-
-  .bg-image-preview-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .bg-image-thumb {
-    width: 64px;
-    height: 36px;
-    object-fit: cover;
-    border-radius: 5px;
-    border: 1px solid #334155;
-  }
-
-  .bg-image-clear-btn {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    border-radius: 5px;
-    padding: 0.2rem 0.45rem;
-    font-size: 0.7rem;
-    cursor: pointer;
-    line-height: 1;
-  }
-
-  .bg-image-clear-btn:hover {
-    background: rgba(239, 68, 68, 0.3);
-    border-color: #f87171;
-  }
-
-  .bg-image-error {
-    color: #f87171;
-    font-size: 0.72rem;
-    margin: 0;
-  }
-
   input:not([type='checkbox']),
   select,
   textarea {

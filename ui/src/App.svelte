@@ -102,7 +102,6 @@
       persona: 'blank',
       addCopyTagOnDuplicate: true,
       uiShellTone: 'teal-slate',
-      uiShellImage: '',
     },
     experimentation: {
       temperature: 0.7,
@@ -191,7 +190,6 @@
           addCopyTagOnDuplicate:
             incoming.addCopyTagOnDuplicate ?? DEFAULT_EXPERIMENTATION.general.addCopyTagOnDuplicate,
           uiShellTone: incoming.uiShellTone ?? DEFAULT_EXPERIMENTATION.general.uiShellTone,
-          uiShellImage: incoming.uiShellImage ?? DEFAULT_EXPERIMENTATION.general.uiShellImage,
         },
         experimentation: {
           temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
@@ -245,10 +243,6 @@
   const uiShellPalette = $derived.by(() => {
     return UI_SHELL_TONES[selectedUiShellTone] ?? UI_SHELL_TONES[DEFAULT_EXPERIMENTATION.general.uiShellTone]
   })
-
-  const selectedUiShellImage = $derived.by(() => (
-    experimentationLive?.general?.uiShellImage ?? ''
-  ))
 
   $effect(() => {
     if (typeof document === 'undefined') return
@@ -1818,9 +1812,7 @@
 
     <main
       class:dark-ui-main={activeTab === 'world' || activeTab === 'story' || activeTab === 'character' || activeTab === 'gallery' || activeTab === 'world-story' || activeTab === 'personas'}
-      style={selectedUiShellImage
-        ? `--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient}; --app-main-image: url('${selectedUiShellImage}');`
-        : `--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient}; --app-main-image: none;`}
+      style={`--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient};`}
     >
     {#if activeTab === 'world'}
       <section class="dark-ui-page dark-ui-world">
@@ -2035,9 +2027,6 @@
     font-family: system-ui, sans-serif;
     min-width: 0;
     background: var(--app-main-solid, #22363b);
-    background-image: var(--app-main-image, none);
-    background-size: cover;
-    background-position: center;
     transition: background 0.2s ease;
   }
 
