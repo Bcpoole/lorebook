@@ -487,16 +487,14 @@
           </select>
         </div>
 
-        {#if selectedStyleData}
-          <div class="control-group">
-            <label>Style Prompt</label>
-            <textarea class="style-preview" readonly rows="3">{selectedStyleData.prompt}</textarea>
-          </div>
-          <div class="control-group">
-            <label>Style Negative Prompt</label>
-            <textarea class="style-preview" readonly rows="3">{selectedStyleData.negative_prompt}</textarea>
-          </div>
-        {/if}
+        <div class="control-group">
+          <label>Style Prompt</label>
+          <textarea class="style-preview" readonly rows="3">{selectedStyleData?.prompt ?? ''}</textarea>
+        </div>
+        <div class="control-group">
+          <label>Style Negative Prompt</label>
+          <textarea class="style-preview" readonly rows="3">{selectedStyleData?.negative_prompt ?? ''}</textarea>
+        </div>
 
         <div class="control-grid two-col">
           <div class="control-group">
