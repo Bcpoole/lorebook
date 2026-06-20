@@ -511,6 +511,7 @@ def _run_stage_sync(
 ) -> str:
     config = experimentation_config or {}
     max_length = int(config.get("maxLength", _stage_max_tokens(stage)))
+    llm_endpoint = config.get("llmEndpoint") or None
     prompts = get_persona_prompts(config.get("persona_id", "blank"))
 
     if stage == "loremaster":
@@ -525,6 +526,7 @@ def _run_stage_sync(
             prompts.LOREMASTER_SYSTEM,
             prompt,
             max_length=max_length,
+            endpoint=llm_endpoint,
         )
         addition = _continuation_addition(prior_text, generated) if continue_output else generated
         output = f"{prior_text}{addition}" if continue_output else addition
@@ -551,6 +553,7 @@ def _run_stage_sync(
             prompts.CHARACTER_SYSTEM,
             prompt,
             max_length=max_length,
+            endpoint=llm_endpoint,
         )
         
         # Guardrail: reject meta responses and retry with stronger instruction
@@ -564,6 +567,7 @@ def _run_stage_sync(
                 prompts.CHARACTER_SYSTEM,
                 retry_prompt,
                 max_length=max_length,
+                endpoint=llm_endpoint,
             )
         
         addition = _continuation_addition(current_details, generated) if continue_output else generated
@@ -591,8 +595,8 @@ def _run_stage_sync(
             prompts.EDITOR_SYSTEM,
             prompt,
             max_length=max_length,
+            endpoint=llm_endpoint,
         )
-        prior_critique = state.get("critique_notes", "")
         addition = _continuation_addition(prior_critique, generated) if continue_output else generated
         critique = f"{state.get('critique_notes', '')}{addition}" if continue_output else addition
         critique = _clean_continued_output(critique)
@@ -619,6 +623,7 @@ async def _run_stage_stream(
         experimentation_config = {}
     
     max_length = int(experimentation_config.get("maxLength", _stage_max_tokens(stage)))
+    llm_endpoint = experimentation_config.get("llmEndpoint") or None
     prompts = get_persona_prompts(experimentation_config.get("persona_id", "blank"))
 
     if await request.is_disconnected():
@@ -636,7 +641,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, prompt, max_length=max_length, endpoint=llm_endpoint):
             if await request.is_disconnected():
                 return
             generated += chunk
@@ -664,7 +669,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, prompt, max_length=max_length, endpoint=llm_endpoint):
             if await request.is_disconnected():
                 return
             generated += chunk
@@ -681,7 +686,7 @@ async def _run_stage_stream(
                 f"Include: name, physical description, personality, background, skills, and role."
             )
             generated = ""
-            for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, retry_prompt, max_length=max_length):
+            for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, retry_prompt, max_length=max_length, endpoint=llm_endpoint):
                 if await request.is_disconnected():
                     return
                 generated += chunk
@@ -739,7 +744,7 @@ async def _run_stage_stream(
                 prompt = f"{prompt}\n\nInstruction:\n{directive}"
 
         generated = ""
-        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length, endpoint=llm_endpoint):
             if await request.is_disconnected():
                 return
             generated += chunk

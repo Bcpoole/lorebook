@@ -52,6 +52,7 @@
       auto: false,
       streaming: true,
       showStats: false,
+      llmEndpoint: 'http://localhost:5001',
       sdEndpoint: 'http://127.0.0.1:7860',
       persona: 'blank',
       addCopyTagOnDuplicate: true,
@@ -381,7 +382,12 @@
 
         <hr class="divider" />
 
-        <div class="subsection-label">Stable Diffusion</div>
+        <div class="subsection-label">APIs</div>
+
+        <div class="control-group">
+          <label for="llm-endpoint">LLM Endpoint</label>
+          <input id="llm-endpoint" type="text" bind:value={live.general.llmEndpoint} class="wide" />
+        </div>
 
         <div class="control-group">
           <label for="sd-endpoint">SD Endpoint</label>

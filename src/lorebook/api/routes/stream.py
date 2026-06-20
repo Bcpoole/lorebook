@@ -71,6 +71,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
     
     # Extract max_length from experimentation config, fallback to stage defaults
     max_length = experimentation_config.get("maxLength", 512)
+    llm_endpoint = experimentation_config.get("llmEndpoint") or None
 
     async def ensure_connected() -> bool:
         return not await request.is_disconnected()
@@ -82,7 +83,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # loremaster
         yield {"event": "node-start", "data": json.dumps({"node": "loremaster"})}
         world_setting = ""
-        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, state["raw_idea"], max_length=max_length):
+        for chunk in stream_local_llm(prompts.LOREMASTER_SYSTEM, state["raw_idea"], max_length=max_length, endpoint=llm_endpoint):
             if not await ensure_connected():
                 return
             world_setting += chunk
@@ -99,7 +100,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         # character designer
         yield {"event": "node-start", "data": json.dumps({"node": "character_designer"})}
         character_details = ""
-        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, state["world_setting"], max_length=max_length):
+        for chunk in stream_local_llm(prompts.CHARACTER_SYSTEM, state["world_setting"], max_length=max_length, endpoint=llm_endpoint):
             if not await ensure_connected():
                 return
             character_details += chunk
@@ -135,7 +136,7 @@ async def _event_generator(raw_idea: str, request: Request, auto_save: bool = Tr
         yield {"event": "node-start", "data": json.dumps({"node": "editor"})}
         critique_notes = ""
         prompt = _editor_prompt(state)
-        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length):
+        for chunk in stream_local_llm(prompts.EDITOR_SYSTEM, prompt, max_length=max_length, endpoint=llm_endpoint):
             if not await ensure_connected():
                 return
             critique_notes += chunk

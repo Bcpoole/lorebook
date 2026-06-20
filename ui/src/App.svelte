@@ -1113,7 +1113,10 @@
       const params = new URLSearchParams({ 
         raw_idea: rawIdea, 
         auto_save: 'true',
-        experimentation_config: JSON.stringify(experimentationLive.experimentation),
+        experimentation_config: JSON.stringify({
+          ...experimentationLive.experimentation,
+          llmEndpoint: experimentationLive.general?.llmEndpoint,
+        }),
         persona_id: experimentationLive.general?.persona || 'blank',
       })
       const es = new EventSource(`/api/stream?${params}`)
@@ -1237,7 +1240,7 @@
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
-          experimentation_config: experimentationLive.experimentation,
+          experimentation_config: { ...experimentationLive.experimentation, llmEndpoint: experimentationLive.general?.llmEndpoint },
           persona_id: experimentationLive.general?.persona || 'blank',
         }),
       })
@@ -1298,7 +1301,7 @@
           continue_output: continueOutput,
           directive,
           character_index: characterIndex,
-          experimentation_config: experimentationLive.experimentation,
+          experimentation_config: { ...experimentationLive.experimentation, llmEndpoint: experimentationLive.general?.llmEndpoint },
           persona_id: experimentationLive.general?.persona || 'blank',
         }),
         signal: controller.signal,
