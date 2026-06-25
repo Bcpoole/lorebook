@@ -5,7 +5,6 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/user-assets", tags=["user-assets"])
 

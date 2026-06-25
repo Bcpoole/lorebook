@@ -452,7 +452,13 @@ def _extract_first_json_block(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200) -> StoryArtifact:
+def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200) -> tuple[StoryArtifact, str]:
+    """Build a story artifact from *raw_idea*.
+
+    Returns a ``(artifact, generation_quality)`` tuple where ``generation_quality``
+    is ``"full"`` when the LLM returned parseable JSON, or ``"partial"`` when the
+    response fell back to plain-text extraction.
+    """
     system_prompt = (
         "You are a story architect. Return ONLY valid JSON with this schema: "
         '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
@@ -464,7 +470,9 @@ def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200
     )
     generated = call_local_llm(system_prompt, raw_idea, max_length=max_length)
     loaded = _extract_first_json_block(generated)
+    quality = "full"
     if loaded is None:
+        quality = "partial"
         loaded = {
             "title": raw_idea[:80] or "Untitled Story",
             "description": generated[:800],
@@ -484,7 +492,7 @@ def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200
         raise HTTPException(status_code=500, detail="Failed to parse generated story artifact")
     if not artifact["style"]:
         artifact["style"] = persona_id
-    return artifact
+    return artifact, quality
 
 
 def _generate_character_only(raw_idea: str, persona_id: str, max_length: int = 700) -> CharacterState:
@@ -583,6 +591,8 @@ def _run_stage_sync(
             raise HTTPException(status_code=400, detail="characters are required for editor")
         if continue_output and state.get("passed_inspection"):
             return _next_stage_from_editor(state)
+
+        prior_critique = state.get("critique_notes", "")
 
         if continue_output:
             prompt = _continuation_prompt(stage, state, directive=directive)
@@ -980,18 +990,19 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
     experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
     max_length = int(experimentation_config.get("maxLength", 1200))
 
-    artifact = _build_story_artifact(raw_idea, persona_id=persona_id, max_length=max_length)
+    artifact, generation_quality = _build_story_artifact(raw_idea, persona_id=persona_id, max_length=max_length)
     state = _normalize_state(raw_idea, body.get("state"))
     state["story_artifact"] = artifact
 
     payload = {
         "raw_idea": raw_idea,
         "state": state,
+        "generation_quality": generation_quality,
         "meta": {"mode": "story"},
         "save_pending": bool(body.get("save_pending", False)),
     }
     save_draft_state(payload, "latest", artifact_type="story")
-    return {"state": state, "story_artifact": artifact}
+    return {"state": state, "story_artifact": artifact, "generation_quality": generation_quality}
 
 
 @router.post("/character")

@@ -8,9 +8,8 @@ Each persona is a Python module that exposes:
   SD_PROMPT_SYSTEM  – str
   REVIEW_SUMMARY_SYSTEM – str
 
-The repository tracks only underscore-prefixed template modules. For local
-customization, create ``blank.py`` beside this file; it will be preferred over
-``_template.py``.
+The built-in baseline is ``default.py``. For local customization, create
+``blank.py`` beside this file; it will be preferred over ``default.py``.
 """
 from __future__ import annotations
 
@@ -29,7 +28,7 @@ def _load_blank_module() -> ModuleType:
     except ModuleNotFoundError as exc:
         if exc.name != f"{__name__}.blank":
             raise
-        return import_module("._template", __name__)
+        return import_module(".default", __name__)
 
 
 _blank_module = _load_blank_module()
