@@ -1,0 +1,9 @@
+{
+  "default": "cinematic",
+  "styles": {
+    "cinematic": {
+      "prompt": "cinematic lighting, dramatic composition",
+      "negative_prompt": "low quality, blurry"
+    }
+  }
+}

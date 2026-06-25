@@ -1,6 +1,6 @@
 """Template persona prompts.
 
-Copy this file to ``blank.py`` and customize locally.
+Copy this file to ``/users/configs/prompts/blank.py`` and customize locally.
 """
 from __future__ import annotations
 

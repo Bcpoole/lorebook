@@ -30,7 +30,10 @@ ui/.vitest-app-test.log
 # Generated outputs
 outputs/
 
-# User-uploaded custom assets (persistent but local-only)
-user/
-!user/.gitkeep
+# User-curated assets/configs (persistent but local-only)
+# Keep only scaffold READMEs/templates in git; ignore real user content.
+user/**
+!user/
+!user/**/
+!user/**/README.md
 !user/configs/sd/_example.json

@@ -13,6 +13,7 @@
     onCancel = () => {},
     onSaveSd = () => {},
     onCancelSd = () => {},
+    onSdDefaultStyleSourceChanged = async () => {},
     onOpenGraph = () => {},
     onToggleCollapse = () => {},
   } = $props()
@@ -75,6 +76,7 @@
       persona: 'blank',
       addCopyTagOnDuplicate: true,
       uiShellTone: 'teal-slate',
+      includeDefaultSdStyles: true,
     },
     experimentation: {
       temperature: 0.7,
@@ -299,6 +301,26 @@
         </div>
 
         <div class="control-group checkbox-row">
+          <label for="include-default-sd-styles">
+            Include baseline SD styles
+            <span
+              class="help-tip"
+              title="When enabled, built-in style presets are shown after /user/configs/sd/styles.json entries. If no user styles exist, built-ins are shown either way."
+            >ⓘ</span>
+          </label>
+          <label class="toggle-switch" for="include-default-sd-styles">
+            <input
+              class="toggle-switch-input"
+              type="checkbox"
+              id="include-default-sd-styles"
+              bind:checked={live.general.includeDefaultSdStyles}
+              onchange={onSdDefaultStyleSourceChanged}
+            />
+            <span class="toggle-switch-slider" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <div class="control-group checkbox-row">
           <label for="multiline-replies">Allow Multiline Replies</label>
           <label class="toggle-switch" for="multiline-replies">
             <input class="toggle-switch-input" type="checkbox" id="multiline-replies" bind:checked={live.general.multilineReplies} />
@@ -447,12 +469,12 @@
         </div>
 
         <div class="control-group">
-          <label>Style Prompt</label>
-          <textarea class="style-preview" readonly rows="3">{selectedStyleData?.prompt ?? ''}</textarea>
+          <label for="sd-style-prompt-preview">Style Prompt</label>
+          <textarea id="sd-style-prompt-preview" class="style-preview" readonly rows="3">{selectedStyleData?.prompt ?? ''}</textarea>
         </div>
         <div class="control-group">
-          <label>Style Negative Prompt</label>
-          <textarea class="style-preview" readonly rows="3">{selectedStyleData?.negative_prompt ?? ''}</textarea>
+          <label for="sd-style-negative-preview">Style Negative Prompt</label>
+          <textarea id="sd-style-negative-preview" class="style-preview" readonly rows="3">{selectedStyleData?.negative_prompt ?? ''}</textarea>
         </div>
 
         <div class="control-grid two-col">
@@ -657,6 +679,14 @@
   .control-group label {
     font-size: 0.78rem;
     color: #cbd5e1;
+  }
+
+  .help-tip {
+    margin-left: 0.35rem;
+    color: #93c5fd;
+    cursor: help;
+    font-size: 0.72rem;
+    vertical-align: middle;
   }
 
   .input-row {

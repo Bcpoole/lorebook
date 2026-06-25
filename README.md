@@ -87,6 +87,11 @@ chmod +x ./scripts/dev.sh
 ## Development
 
 ```powershell
+# If this is a fresh checkout or ui/node_modules is missing
+Set-Location .\ui
+npm install
+Set-Location ..
+
 # Lint
 ruff check .
 
@@ -102,7 +107,8 @@ Set-Location ..
 ## Local config templates (open-source-safe)
 
 - Prompts load `src/lorebook/config/prompts/blank.py` when present, otherwise `src/lorebook/config/prompts/_template.py`.
-- SD styles load from `user/configs/sd/styles.json` first (see `user/configs/sd/_example.json` for the format), then fall back to `src/lorebook/config/sd/styles.py` if present, then `src/lorebook/config/sd/_template.py`.
+- SD styles load from `user/configs/sd/styles.json` first (see `user/configs/sd/_example.json` for the format), then from built-in `src/lorebook/config/sd/styles.py`.
+- General Settings includes a toggle to include baseline SD styles in the preset list; if `user/configs/sd/styles.json` is missing, baseline styles are loaded regardless.
 
 ## API Endpoints
 
@@ -144,7 +150,12 @@ Drafts are stored per type under each folder's `_drafts/` subdirectory (e.g., `o
 
 ## User-Curated Directory (`user/`)
 
-The `user/` directory is `.gitignore`'d but more permanent than `outputs/`. The app reads from it alongside `outputs/` but **never auto-writes to it** — place content here manually to keep it across resets or to share a curated set of artifacts/personas.
+Lorebook intentionally separates storage into two roles:
+
+- **`outputs/`**: app-generated working storage. Good for iteration, drafts, and disposable runs; easy to clear/reset.
+- **`user/`**: user-owned curated storage. Use this for artifacts/settings you want to keep long-term.
+
+The app reads from both, but **never auto-writes to `user/`**. Today, promoting content from `outputs/` into `user/` is a manual copy step; this separation keeps ephemeral generation output independent from durable user curation.
 
 It is split into two sub-directories:
 
@@ -163,7 +174,11 @@ user/
 
 The **Gallery**, **Personas**, and **Lore** pages load from both `outputs/` and `user/artefacts/` automatically. If the same artifact ID exists in both, `outputs/` takes priority.
 
-Custom background images (uploaded via the UI's General settings) are stored in `user/configs/backgrounds/` and served at `/user-assets/backgrounds/<filename>`.
+Background management under `user/configs/backgrounds/` is currently paused/not implemented in the active UI flow; treat this folder as reserved for the rework.
+
+### Tracked `user/` scaffold
+
+This repository keeps a tracked scaffold under `user/` using per-folder `README.md` files. Real user content remains gitignored, while these scaffold docs describe what each folder is for and how loading/precedence works.
 
 ## Artifact Gallery & Editing
 

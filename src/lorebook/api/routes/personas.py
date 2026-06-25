@@ -10,6 +10,16 @@ from lorebook.config.personas import get_personas_dir, get_user_personas_dir, lo
 router = APIRouter(prefix="/personas", tags=["personas"])
 
 
+def _persona_source(persona_id: str) -> str:
+    user_meta = get_user_personas_dir() / persona_id / "meta.json"
+    if user_meta.is_file():
+        return "user"
+    outputs_meta = get_personas_dir() / persona_id / "meta.json"
+    if outputs_meta.is_file():
+        return "outputs"
+    return "builtin"
+
+
 @router.get("")
 async def get_personas() -> list[dict]:
     """Return metadata for all registered personas."""
@@ -27,6 +37,7 @@ async def get_personas() -> list[dict]:
                 "promptCount": len(meta.prompts.to_prompt_items()),
                 "created": meta.created,
                 "modified": meta.modified,
+                "source": _persona_source(meta.id),
             }
         )
     return result

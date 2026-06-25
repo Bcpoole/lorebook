@@ -36,6 +36,15 @@ The FastAPI backend lives in `src/lorebook/api/`:
 
 The Svelte+Vite frontend lives in `ui/`. Run both together with `scripts/dev.ps1` (Windows) or `scripts/dev.sh` (Linux/macOS).
 
+### Frontend dependency prerequisite
+
+Before running frontend commands (`npm run build`, `npm run dev`, `npm test`) in a fresh environment, install UI dependencies first:
+
+```powershell
+Set-Location .\ui
+npm install
+```
+
 ## Frontend Architecture
 
 ### Gallery System
@@ -179,7 +188,7 @@ user/
   └── configs/        # UI configuration and custom assets
       ├── personas/   # Curated personas (meta.json + prompts.json per subdirectory)
       ├── sd/         # Custom SD styles — copy `_example.json` → `styles.json` to activate
-      └── backgrounds/# Custom UI background images (served at /user-assets/backgrounds/)
+      └── backgrounds/# Reserved for background-feature rework (currently paused)
 ```
 
 ### Load Priority
@@ -193,5 +202,4 @@ user/
 - `DELETE /api/user-assets/backgrounds/{filename}` — remove a background
 - `/user-assets/` — static file mount serving `user/configs/`
 
-**SD styles**: place `styles.json` in `user/configs/sd/` (see `_example.json` for format). Load order: `user/configs/sd/styles.json` → `src/lorebook/config/sd/styles.py` → built-in `_template.py`.
-
+**SD styles**: place `styles.json` in `user/configs/sd/` (see `_example.json` for format). Load order: `user/configs/sd/styles.json` → `src/lorebook/config/sd/styles.py`.

@@ -1,17 +1,17 @@
 """Stable Diffusion style configuration.
 
-Load order:
-1. ``user/configs/sd/styles.json`` — user-curated styles in the persistent user directory
-2. ``styles.py`` in this package directory — local Python override (kept for backward compat)
-3. ``_template.py`` — built-in defaults
+Load behavior:
+1. ``user/configs/sd/styles.json`` (optional user-curated styles)
+2. ``styles.py`` (built-in baseline styles)
 """
 from __future__ import annotations
 
 import json
-from importlib import import_module
 from pathlib import Path
-from types import ModuleType
 from typing import Final
+
+from .styles import DEFAULT_SD_STYLE as BUILTIN_DEFAULT_SD_STYLE
+from .styles import SD_STYLES as BUILTIN_SD_STYLES
 
 
 def _load_user_styles_json() -> tuple[dict[str, dict[str, str]], str] | None:
@@ -32,26 +32,29 @@ def _load_user_styles_json() -> tuple[dict[str, dict[str, str]], str] | None:
         return None
 
 
-def _load_styles_module() -> ModuleType:
-    try:
-        return import_module(".styles", __name__)
-    except ModuleNotFoundError as exc:
-        if exc.name != f"{__name__}.styles":
-            raise
-        return import_module("._template", __name__)
+def resolve_sd_styles(include_builtin_defaults: bool = True) -> tuple[dict[str, dict[str, str]], str]:
+    """Resolve available SD styles with optional built-in fallback inclusion.
 
-
-def _resolve() -> tuple[dict[str, dict[str, str]], str]:
+    When user styles are missing, built-ins are always returned.
+    """
     user = _load_user_styles_json()
-    if user is not None:
-        return user
-    mod = _load_styles_module()
-    return mod.SD_STYLES, mod.DEFAULT_SD_STYLE
+    if user is None:
+        return dict(BUILTIN_SD_STYLES), BUILTIN_DEFAULT_SD_STYLE
+
+    user_styles, user_default = user
+    if not include_builtin_defaults:
+        return dict(user_styles), user_default
+
+    merged: dict[str, dict[str, str]] = dict(user_styles)
+    for name, style in BUILTIN_SD_STYLES.items():
+        if name not in merged:
+            merged[name] = style
+    return merged, user_default
 
 
 SD_STYLES: Final[dict[str, dict[str, str]]]
 DEFAULT_SD_STYLE: Final[str]
 
-SD_STYLES, DEFAULT_SD_STYLE = _resolve()
+SD_STYLES, DEFAULT_SD_STYLE = resolve_sd_styles(include_builtin_defaults=True)
 
-__all__ = ["SD_STYLES", "DEFAULT_SD_STYLE"]
+__all__ = ["SD_STYLES", "DEFAULT_SD_STYLE", "resolve_sd_styles"]

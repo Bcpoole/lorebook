@@ -1,7 +1,4 @@
-"""Stable Diffusion style templates.
-
-Copy this file to ``styles.py`` and customize locally.
-"""
+"""Built-in Stable Diffusion baseline styles."""
 from __future__ import annotations
 
 from typing import Final

@@ -19,6 +19,7 @@ DEFAULT_EXPERIMENTATION_CONFIG = {
         "outputFormat": "markdown",
         "multilineReplies": True,
         "addCopyTagOnDuplicate": True,
+        "includeDefaultSdStyles": True,
     },
     "experimentation": {
         "temperature": 0.7,
@@ -94,6 +95,10 @@ async def load_experimentation_config() -> dict:
                     "addCopyTagOnDuplicate": saved.get(
                         "addCopyTagOnDuplicate",
                         DEFAULT_EXPERIMENTATION_CONFIG["general"]["addCopyTagOnDuplicate"],
+                    ),
+                    "includeDefaultSdStyles": saved.get(
+                        "includeDefaultSdStyles",
+                        DEFAULT_EXPERIMENTATION_CONFIG["general"]["includeDefaultSdStyles"],
                     ),
                 },
                 "experimentation": {
