@@ -4,8 +4,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from lorebook.config.personas import load_persona, save_persona, list_personas, delete_persona
-from lorebook.config.prompts import get_template_persona
+from lorebook.config.personas import (
+    delete_persona,
+    get_personas_dir,
+    get_user_personas_dir,
+    load_persona,
+    save_persona,
+)
+from lorebook.config.prompts import get_template_persona, list_personas as list_registered_personas
 from lorebook.config.prompts._types import PersonaMeta, PersonaPrompts
 
 router = APIRouter(prefix="/personas", tags=["personas"])
@@ -55,6 +61,14 @@ def _avatar_url(persona: PersonaMeta) -> str | None:
     return f"/api/personas/{persona.id}/avatar" if str(persona.avatar or "").strip() else None
 
 
+def _persona_source(persona_id: str) -> str:
+    if (get_user_personas_dir() / persona_id / "meta.json").is_file():
+        return "user"
+    if (get_personas_dir() / persona_id / "meta.json").is_file():
+        return "outputs"
+    return "builtin"
+
+
 def _persona_payload(persona: PersonaMeta, include_prompts: bool = False) -> dict:
     payload = {
         "id": persona.id,
@@ -67,6 +81,7 @@ def _persona_payload(persona: PersonaMeta, include_prompts: bool = False) -> dic
         "promptCount": len(persona.prompts.to_prompt_items()),
         "created": persona.created,
         "modified": persona.modified,
+        "source": _persona_source(persona.id),
     }
     if include_prompts:
         payload["prompts"] = _prompt_items(persona.prompts)
@@ -75,12 +90,17 @@ def _persona_payload(persona: PersonaMeta, include_prompts: bool = False) -> dic
 
 @router.get("")
 async def list_all_personas() -> list[dict]:
-    """Return metadata for all persisted personas."""
-    persisted = list_personas()
-    result = []
-    for persona in persisted:
-        result.append(_persona_payload(persona))
-    return result
+    """Return metadata for all built-in and persisted personas."""
+    personas = list_registered_personas()
+    source_rank = {"user": 0, "outputs": 1, "builtin": 2}
+    personas.sort(
+        key=lambda persona: (
+            source_rank.get(_persona_source(persona.id), 3),
+            -int(bool(persona.favorite)),
+            str(persona.name or "").lower(),
+        )
+    )
+    return [_persona_payload(persona) for persona in personas]
 
 
 @router.get("/template")

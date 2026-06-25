@@ -102,6 +102,7 @@
       persona: 'blank',
       addCopyTagOnDuplicate: true,
       uiShellTone: 'teal-slate',
+      includeDefaultSdStyles: true,
     },
     experimentation: {
       temperature: 0.7,
@@ -190,6 +191,8 @@
           addCopyTagOnDuplicate:
             incoming.addCopyTagOnDuplicate ?? DEFAULT_EXPERIMENTATION.general.addCopyTagOnDuplicate,
           uiShellTone: incoming.uiShellTone ?? DEFAULT_EXPERIMENTATION.general.uiShellTone,
+          includeDefaultSdStyles:
+            incoming.includeDefaultSdStyles ?? DEFAULT_EXPERIMENTATION.general.includeDefaultSdStyles,
         },
         experimentation: {
           temperature: incoming.temperature ?? DEFAULT_EXPERIMENTATION.experimentation.temperature,
@@ -1006,7 +1009,11 @@
 
   async function loadSdStyles() {
     try {
-      const res = await fetch('/api/sd-styles', { cache: 'no-store' })
+      const includeDefaults = experimentationLive?.general?.includeDefaultSdStyles !== false
+      const params = new URLSearchParams({
+        include_defaults: includeDefaults ? 'true' : 'false',
+      })
+      const res = await fetch(`/api/sd-styles?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) return
       const data = await res.json()
       const styles = Array.isArray(data?.styles) && data.styles.length > 0 ? data.styles : ['balanced']
@@ -1029,29 +1036,26 @@
     }
   }
 
+  async function handleSdDefaultStyleSourceChanged() {
+    await loadSdStyles()
+  }
+
   async function loadPersonas() {
     try {
-      const [listRes, templateRes] = await Promise.all([
-        fetch('/api/personas', { cache: 'no-store' }),
-        fetch('/api/personas/template', { cache: 'no-store' }),
-      ])
-
+      const listRes = await fetch('/api/personas', { cache: 'no-store' })
       const data = listRes.ok ? await listRes.json() : []
       const list = Array.isArray(data) ? data : []
-      const template = templateRes.ok ? await templateRes.json() : null
-
-      if (template?.id) {
-        const rest = list.filter((p) => p.id !== template.id)
-        rest.sort((a, b) => {
-          const aFav = a?.favorite ? 1 : 0
-          const bFav = b?.favorite ? 1 : 0
-          if (aFav !== bFav) return bFav - aFav
-          return String(a?.name || '').localeCompare(String(b?.name || ''))
-        })
-        personaOptions = [template, ...rest]
-      } else {
-        personaOptions = list.length > 0 ? list : [...FALLBACK_PERSONA_OPTIONS]
-      }
+      const sourceRank = { user: 0, outputs: 1, builtin: 2 }
+      list.sort((a, b) => {
+        const aRank = sourceRank[String(a?.source || '').toLowerCase()] ?? 3
+        const bRank = sourceRank[String(b?.source || '').toLowerCase()] ?? 3
+        if (aRank !== bRank) return aRank - bRank
+        const aFav = a?.favorite ? 1 : 0
+        const bFav = b?.favorite ? 1 : 0
+        if (aFav !== bFav) return bFav - aFav
+        return String(a?.name || '').localeCompare(String(b?.name || ''))
+      })
+      personaOptions = list.length > 0 ? list : [...FALLBACK_PERSONA_OPTIONS]
 
       const selectedId = experimentationLive?.general?.persona || 'blank'
       if (!personaOptions.some((p) => p.id === selectedId)) {
@@ -1779,6 +1783,7 @@
       collapsed={leftPanelCollapsed}
       sdStyleOptions={sdStyleOptions}
       sdStyleData={sdStyleData}
+      onSdDefaultStyleSourceChanged={handleSdDefaultStyleSourceChanged}
       onSave={saveExperimentation}
       onCancel={cancelExperimentation}
       onSaveSd={saveExperimentation}

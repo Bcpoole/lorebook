@@ -19,6 +19,7 @@ DEFAULT_EXPERIMENTATION_CONFIG = {
         "outputFormat": "markdown",
         "multilineReplies": True,
         "addCopyTagOnDuplicate": True,
+        "includeDefaultSdStyles": True,
     },
     "experimentation": {
         "temperature": 0.7,
@@ -95,6 +96,10 @@ async def load_experimentation_config() -> dict:
                         "addCopyTagOnDuplicate",
                         DEFAULT_EXPERIMENTATION_CONFIG["general"]["addCopyTagOnDuplicate"],
                     ),
+                    "includeDefaultSdStyles": saved.get(
+                        "includeDefaultSdStyles",
+                        DEFAULT_EXPERIMENTATION_CONFIG["general"]["includeDefaultSdStyles"],
+                    ),
                 },
                 "experimentation": {
                     "temperature": saved.get("temperature", DEFAULT_EXPERIMENTATION_CONFIG["experimentation"]["temperature"]),
@@ -118,6 +123,10 @@ async def load_experimentation_config() -> dict:
                     **saved.get("sd", {}),
                 },
             }
+
+        # New nested format — return exactly what was saved so save/load is a round-trip.
+        if isinstance(saved, dict) and isinstance(saved.get("experimentation"), dict):
+            return saved
 
         return {
             "general": {

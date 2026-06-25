@@ -1,6 +1,8 @@
-"""Template persona prompts.
+"""Default persona prompts (blank persona).
 
-Copy this file to ``blank.py`` and customize locally.
+This is the built-in baseline persona used when no custom persona is selected.
+It also serves as the template when creating new personas — copy/fork the
+prompts from here via the Persona Wizard in the UI.
 """
 from __future__ import annotations
 

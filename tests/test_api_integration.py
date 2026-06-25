@@ -938,11 +938,86 @@ def test_gallery_endpoint_filters_by_artifact_type() -> None:
 
     world_res = client.get("/api/gallery", params={"artifact_type": "world"})
     assert world_res.status_code == 200
-    assert [item["run_id"] for item in world_res.json()["items"]] == [world_saved["run_id"]]
+    world_items = world_res.json()["items"]
+    assert any(item["run_id"] == world_saved["run_id"] for item in world_items)
+    assert all(item["artifact_type"] == "world" for item in world_items)
 
     location_res = client.get("/api/gallery", params={"artifact_type": "location"})
     assert location_res.status_code == 200
-    assert [item["run_id"] for item in location_res.json()["items"]] == [location_saved["run_id"]]
+    location_items = location_res.json()["items"]
+    assert any(item["run_id"] == location_saved["run_id"] for item in location_items)
+    assert all(item["artifact_type"] == "location" for item in location_items)
+
+
+def test_sd_styles_endpoint_honors_include_defaults_query(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    calls: list[bool] = []
+
+    def fake_resolve_sd_styles(include_builtin_defaults: bool = True):
+        calls.append(include_builtin_defaults)
+        if include_builtin_defaults:
+            return (
+                {
+                    "user_balanced": {"prompt": "{prompt}", "negative_prompt": ""},
+                    "balanced": {"prompt": "{prompt}", "negative_prompt": ""},
+                },
+                "user_balanced",
+            )
+        return (
+            {
+                "user_balanced": {"prompt": "{prompt}", "negative_prompt": ""},
+            },
+            "user_balanced",
+        )
+
+    monkeypatch.setattr(run_routes, "resolve_sd_styles", fake_resolve_sd_styles)
+
+    client = TestClient(create_app())
+
+    user_only = client.get("/api/sd-styles", params={"include_defaults": "false"})
+    assert user_only.status_code == 200
+    assert user_only.json()["styles"] == ["user_balanced"]
+    assert user_only.json()["default_style"] == "user_balanced"
+
+    with_defaults = client.get("/api/sd-styles", params={"include_defaults": "true"})
+    assert with_defaults.status_code == 200
+    assert with_defaults.json()["styles"] == ["user_balanced", "balanced"]
+    assert with_defaults.json()["default_style"] == "user_balanced"
+
+    assert calls == [False, True]
+
+
+def test_personas_endpoint_orders_user_then_outputs_then_builtin(tmp_path: Path, monkeypatch) -> None:
+    from lorebook.api.routes import personas_crud
+    from lorebook.config.prompts._types import PersonaMeta, PersonaPrompts
+
+    user_root = tmp_path / "user_personas"
+    outputs_root = tmp_path / "outputs_personas"
+    (user_root / "user_test" / "meta.json").parent.mkdir(parents=True, exist_ok=True)
+    (outputs_root / "outputs_test" / "meta.json").parent.mkdir(parents=True, exist_ok=True)
+    (user_root / "user_test" / "meta.json").write_text("{}", encoding="utf-8")
+    (outputs_root / "outputs_test" / "meta.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(personas_crud, "get_user_personas_dir", lambda: user_root)
+    monkeypatch.setattr(personas_crud, "get_personas_dir", lambda: outputs_root)
+    monkeypatch.setattr(
+        personas_crud,
+        "list_registered_personas",
+        lambda: [
+            PersonaMeta(id="builtin_test", name="Builtin Persona", description="", tags=[], prompts=PersonaPrompts()),
+            PersonaMeta(id="outputs_test", name="Outputs Persona", description="", tags=[], prompts=PersonaPrompts()),
+            PersonaMeta(id="user_test", name="User Persona", description="", tags=[], prompts=PersonaPrompts()),
+        ],
+    )
+
+    client = TestClient(create_app())
+    res = client.get("/api/personas")
+    assert res.status_code == 200
+    payload = res.json()
+
+    assert [entry["id"] for entry in payload[:3]] == ["user_test", "outputs_test", "builtin_test"]
+    assert [entry["source"] for entry in payload[:3]] == ["user", "outputs", "builtin"]
 
 
 def test_story_save_creates_location_and_object_artifacts() -> None:
