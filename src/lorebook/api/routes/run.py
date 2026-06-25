@@ -452,25 +452,77 @@ def _extract_first_json_block(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200) -> tuple[StoryArtifact, str]:
+_STORY_SYSTEM_PROMPT = (
+    "You are a story architect. Return ONLY valid JSON with this schema: "
+    '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
+    '"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}], '
+    '"locations":[{"name":"","description":"","tags":[""]}], '
+    '"objects":[{"name":"","description":"","tags":[""]}], '
+    '"opening":"", "examples":[{"label":"","text":""}]}. '
+    "Use concise language. description must be 128 words max."
+)
+
+
+def _story_is_full_quality(story: dict[str, Any]) -> bool:
+    """Return True only when the story has meaningful content in key narrative fields."""
+    return bool(
+        str(story.get("style") or "").strip()
+        and str(story.get("opening") or "").strip()
+    )
+
+
+def _try_recover_embedded_story(outer: dict[str, Any]) -> dict[str, Any] | None:
+    """Scan string field values in *outer* for a higher-quality embedded story JSON.
+
+    Some LLMs wrap the real story JSON inside a description or plot field.  If the
+    outer object fails the quality check, attempt to extract a better candidate from
+    its string values.
+    """
+    for value in outer.values():
+        if not isinstance(value, str) or len(value) < 20:
+            continue
+        candidate = _extract_first_json_block(value)
+        if candidate is None:
+            try:
+                candidate = json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        if isinstance(candidate, dict) and _coerce_story_artifact(candidate) is not None:
+            if _story_is_full_quality(candidate):
+                return candidate
+    return None
+
+
+def _build_story_artifact(
+    raw_idea: str,
+    persona_id: str,
+    max_length: int = 1200,
+    story_setup: dict[str, Any] | None = None,
+    instruction: str = "",
+) -> tuple[StoryArtifact, str]:
     """Build a story artifact from *raw_idea*.
 
     Returns a ``(artifact, generation_quality)`` tuple where ``generation_quality``
     is ``"full"`` when the LLM returned parseable JSON, or ``"partial"`` when the
     response fell back to plain-text extraction.
     """
-    system_prompt = (
-        "You are a story architect. Return ONLY valid JSON with this schema: "
-        '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
-        '"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}], '
-        '"locations":[{"name":"","description":"","tags":[""]}], '
-        '"objects":[{"name":"","description":"","tags":[""]}], '
-        '"opening":"", "examples":[{"label":"","text":""}]}. '
-        "Use concise language. description must be 128 words max."
-    )
-    generated = call_local_llm(system_prompt, raw_idea, max_length=max_length)
+    prompt = raw_idea
+    if story_setup and isinstance(story_setup, dict):
+        setup_lines = "\n".join(
+            f"- {k}: {v}" for k, v in story_setup.items() if str(v or "").strip()
+        )
+        if setup_lines:
+            prompt = f"{prompt}\n\nStory setup preferences:\n{setup_lines}"
+    if instruction:
+        prompt = f"{prompt}\n\nInstruction:\n{instruction}"
+
+    generated = call_local_llm(_STORY_SYSTEM_PROMPT, prompt, max_length=max_length)
     loaded = _extract_first_json_block(generated)
     quality = "full"
+    if loaded is not None and not _story_is_full_quality(loaded):
+        recovered = _try_recover_embedded_story(loaded)
+        if recovered is not None:
+            loaded = recovered
     if loaded is None:
         quality = "partial"
         loaded = {
@@ -493,6 +545,62 @@ def _build_story_artifact(raw_idea: str, persona_id: str, max_length: int = 1200
     if not artifact["style"]:
         artifact["style"] = persona_id
     return artifact, quality
+
+
+def _build_story_action(
+    raw_idea: str,
+    existing_story: dict[str, Any],
+    action: str,
+    persona_id: str,
+    max_length: int = 1200,
+) -> tuple[StoryArtifact, str]:
+    """Apply *action* to *existing_story* by asking the LLM to regenerate it.
+
+    Returns ``(artifact, generation_quality)`` where ``generation_quality`` is
+    ``"full"`` on success or ``"fallback"`` when parsing fails (existing story
+    is preserved).
+    """
+    prompt = (
+        f"{raw_idea}\n\nCurrent context JSON:\n{json.dumps(existing_story, ensure_ascii=False)}"
+        f"\n\nAction: {action}"
+    )
+    generated = call_local_llm(_STORY_SYSTEM_PROMPT, prompt, max_length=max_length)
+    loaded = _extract_first_json_block(generated)
+    if loaded is None:
+        artifact = _coerce_story_artifact(existing_story)
+        return (artifact if artifact is not None else existing_story), "fallback"  # type: ignore[return-value]
+
+    artifact = _coerce_story_artifact(loaded)
+    if artifact is None:
+        artifact = _coerce_story_artifact(existing_story)
+        return (artifact if artifact is not None else existing_story), "fallback"  # type: ignore[return-value]
+    if not artifact["style"]:
+        artifact["style"] = persona_id
+    return artifact, "full"
+
+
+def _story_item_sd_prompt(
+    item: dict[str, Any],
+    story: dict[str, Any],
+    section: str,
+    sd_config: dict[str, Any] | None = None,
+    persona_id: str = "blank",
+) -> str:
+    """Generate an SD image prompt for a story entity item."""
+    prompts = get_persona_prompts(persona_id)
+    context_parts = [f"Section: {section}"]
+    for key in ("name", "description", "summary", "role"):
+        val = str(item.get(key) or "").strip()
+        if val:
+            context_parts.append(f"{key.capitalize()}: {val}")
+    for key in ("setting", "style"):
+        val = str(story.get(key) or "").strip()
+        if val:
+            context_parts.append(f"Story {key}: {val}")
+    context = "\n".join(context_parts)
+    return call_local_llm(prompts.SD_PROMPT_SYSTEM, context, max_length=200)
+
+
 
 
 def _generate_character_only(raw_idea: str, persona_id: str, max_length: int = 700) -> CharacterState:
@@ -989,9 +1097,23 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
     persona_id: str = str(body.get("persona_id", "blank"))
     experimentation_config: dict[str, Any] = body.get("experimentation_config", {})
     max_length = int(experimentation_config.get("maxLength", 1200))
+    story_setup: dict[str, Any] | None = body.get("story_setup") if isinstance(body.get("story_setup"), dict) else None
+    instruction: str = str(body.get("instruction") or "").strip()
+    action: str = str(body.get("action") or "").strip()
 
-    artifact, generation_quality = _build_story_artifact(raw_idea, persona_id=persona_id, max_length=max_length)
     state = _normalize_state(raw_idea, body.get("state"))
+    existing_story = state.get("story_artifact") if isinstance(state.get("story_artifact"), dict) else None
+
+    if action and existing_story:
+        artifact, generation_quality = _build_story_action(
+            raw_idea, existing_story, action, persona_id=persona_id, max_length=max_length
+        )
+    else:
+        artifact, generation_quality = _build_story_artifact(
+            raw_idea, persona_id=persona_id, max_length=max_length,
+            story_setup=story_setup, instruction=instruction,
+        )
+
     state["story_artifact"] = artifact
 
     payload = {
@@ -1002,7 +1124,85 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
         "save_pending": bool(body.get("save_pending", False)),
     }
     save_draft_state(payload, "latest", artifact_type="story")
-    return {"state": state, "story_artifact": artifact, "generation_quality": generation_quality}
+
+    response: Dict[str, Any] = {
+        "state": state,
+        "story_artifact": artifact,
+        "generation_quality": generation_quality,
+    }
+    if action:
+        response["action"] = action
+    if story_setup is not None:
+        response["story_setup"] = story_setup
+    if instruction:
+        response["story_instruction"] = instruction
+    return response
+
+
+_STORY_ITEM_SECTIONS = frozenset({"characters_artifact", "locations", "objects", "examples", "plot"})
+
+
+@router.post("/story-item")
+async def story_item_operation(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update, delete, or generate an image for a single item within a story artifact."""
+    raw_idea: str = str(body.get("raw_idea") or "").strip()
+    section: str = str(body.get("section") or "")
+    operation: str = str(body.get("operation") or "")
+    item_index: int = int(body.get("item_index", 0))
+
+    if section not in _STORY_ITEM_SECTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid section '{section}'. Must be one of {sorted(_STORY_ITEM_SECTIONS)}")
+
+    state = _normalize_state(raw_idea, body.get("state"))
+    artifact = state.get("story_artifact")
+    if not isinstance(artifact, dict):
+        raise HTTPException(status_code=400, detail="state.story_artifact is required")
+
+    artifact = dict(artifact)
+    items: list[Any] = list(artifact.get(section) or [])
+
+    if operation == "update":
+        item = body.get("item")
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="item is required for update operation")
+        if 0 <= item_index < len(items):
+            items[item_index] = item
+        else:
+            items.append(item)
+
+    elif operation == "delete":
+        if 0 <= item_index < len(items):
+            items.pop(item_index)
+
+    elif operation == "image":
+        if item_index < 0 or item_index >= len(items) or not isinstance(items[item_index], dict):
+            raise HTTPException(status_code=400, detail="Invalid item_index")
+        mode: str = str(body.get("mode") or "prompt")
+        sd_config: dict[str, Any] = body.get("sd_config") if isinstance(body.get("sd_config"), dict) else {}
+        persona_id: str = str(body.get("persona_id") or "blank")
+        item = dict(items[item_index])
+
+        image_prompt = _story_item_sd_prompt(item, artifact, section, sd_config=sd_config, persona_id=persona_id)
+        item["image_prompt"] = image_prompt
+
+        if mode == "full":
+            _assert_sd_available(sd_config.get("endpoint"))
+            style_name = str(sd_config.get("style") or "") or None
+            full_path, data_uri, _styled, _style = _render_sd_image(image_prompt, style_name=style_name, sd_config=sd_config)
+            item["image_name"] = Path(full_path).name
+            item["image_data"] = data_uri
+            item.pop("image_path", None)
+
+        items[item_index] = item
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid operation '{operation}'. Must be update, delete, or image")
+
+    artifact[section] = items
+    state["story_artifact"] = artifact
+    return {"story_artifact": artifact, "state": state}
+
+
 
 
 @router.post("/character")

@@ -45,10 +45,12 @@ def get_outputs_root() -> Path:
 
 def get_user_root() -> Path:
     """Persistent user-curated artefact directory (gitignored, never auto-written by the app).
-    
-    Lives at user/artefacts/ and mirrors the outputs/ subdirectory structure.
+
+    Lives at ``user/artefacts/`` beside ``outputs/`` and mirrors its subdirectory
+    structure.  Derived from :func:`get_outputs_root` so that test monkeypatches of
+    ``get_outputs_root`` automatically isolate the user root too.
     """
-    return Path(__file__).resolve().parents[3] / "user" / "artefacts"
+    return get_outputs_root().parent / "user" / "artefacts"
 
 
 def _normalize_artifact_type(value: Any) -> str:

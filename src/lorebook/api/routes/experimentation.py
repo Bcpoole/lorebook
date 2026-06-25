@@ -124,6 +124,10 @@ async def load_experimentation_config() -> dict:
                 },
             }
 
+        # New nested format — return exactly what was saved so save/load is a round-trip.
+        if isinstance(saved, dict) and isinstance(saved.get("experimentation"), dict):
+            return saved
+
         return {
             "general": {
                 **DEFAULT_EXPERIMENTATION_CONFIG["general"],
