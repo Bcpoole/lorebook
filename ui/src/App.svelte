@@ -1820,10 +1820,10 @@
       style={`--app-main-solid: ${uiShellPalette.base}; --app-main-gradient: ${uiShellPalette.gradient};`}
     >
     {#if activeTab === 'world'}
-      <section class="dark-ui-page dark-ui-world">
-        <div class="page-header">
-          <h2>World Builder</h2>
-          <button class="page-reset-btn" type="button" onclick={handleResetWorldPage}>Reset</button>
+      <section class="dark-ui-page dark-ui-world has-reset">
+        <button class="app-btn-reset app-btn-reset-corner" type="button" onclick={handleResetWorldPage}>Reset</button>
+        <div class="app-page-header">
+          <h2 class="app-page-title">World Builder</h2>
         </div>
         <RawIdeaForm
           {running}
@@ -1942,15 +1942,21 @@
 
 <style>
   :global(html, body) {
+    font-family: Inter, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
     padding: 0;
     background: var(--app-shell-root, #020617);
   }
 
   :global(#app) {
+    font-family: inherit;
     margin: 0;
     min-height: 100vh;
     background: var(--app-shell-root, #020617);
+  }
+
+  :global(input, textarea, select, button) {
+    font: inherit;
   }
 
   .app-container {
@@ -2029,18 +2035,10 @@
     flex-direction: column;
     overflow-y: auto;
     padding: 0.5rem 0.6rem 0.9rem;
-    font-family: system-ui, sans-serif;
+    font-family: inherit;
     min-width: 0;
     background: var(--app-main-solid, #22363b);
     transition: background 0.2s ease;
-  }
-
-  .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.65rem;
   }
 
   .dark-ui-world {
@@ -2048,34 +2046,12 @@
     gap: 0.75rem;
   }
 
-  .page-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-    color: var(--lb-page-heading, #0f172a);
-  }
-
-  .page-reset-btn {
-    border: 1px solid var(--lb-btn-secondary-border, #94a3b8);
-    background: var(--lb-btn-secondary-bg, #fff);
-    color: var(--lb-btn-secondary-fg, #334155);
-    border-radius: 6px;
-    padding: 0.4rem 0.75rem;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 600;
-  }
-
-  .page-reset-btn:hover {
-    border-color: var(--lb-border-2, #64748b);
-    background: rgba(71, 85, 105, 0.5);
-  }
-
   .persona-side-panel {
     width: 280px;
     border-left: 1px solid #1f2937;
     background: #111827;
     color: #e5e7eb;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: inherit;
     font-size: 12px;
     display: flex;
     flex-direction: column;

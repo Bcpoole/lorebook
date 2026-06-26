@@ -7,7 +7,7 @@
   import ObjectModal from './ObjectModal.svelte'
 
   let {
-    title = 'Saved Gallery',
+    title = 'Gallery',
     tabs = [
       { id: 'character', label: 'Character', artifactType: 'character' },
       { id: 'location', label: 'Location', artifactType: 'location' },
@@ -401,7 +401,7 @@
 
 <section class="gallery-page dark-ui-page dark-ui-gallery">
   <div class="gallery-topbar">
-    <h2>{title}</h2>
+    <h2 class="app-page-title">{title}</h2>
   </div>
 
   <div class="artifact-tabs" role="tablist" aria-label={`${title} artifact types`}>

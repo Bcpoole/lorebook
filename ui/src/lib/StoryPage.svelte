@@ -247,10 +247,10 @@
   })
 </script>
 
-<section class="story-page dark-ui-page dark-ui-story">
-  <div class="page-header">
-    <h2>Story Artifact</h2>
-    <button class="reset-btn" type="button" onclick={handleResetStoryPage}>Reset</button>
+<section class="story-page dark-ui-page dark-ui-story has-reset">
+  <button class="app-btn-reset app-btn-reset-corner" type="button" onclick={handleResetStoryPage}>Reset</button>
+  <div class="app-page-header">
+    <h2 class="app-page-title">Story Creator</h2>
   </div>
   <textarea bind:value={rawIdea} rows="4" placeholder="Describe the story concept..." disabled={loading}></textarea>
   <div class="setup-grid">
@@ -261,8 +261,8 @@
     <label>Length target<input type="text" value={storySetup?.length_target ?? ''} oninput={(event) => updateStorySetup('length_target', event.currentTarget.value)} placeholder="Short scene, chapter..." disabled={loading} /></label>
   </div>
   <textarea bind:value={storyInstruction} rows="3" placeholder="Instruction for this pass (optional)..." disabled={loading}></textarea>
-  <div class="actions">
-    <button onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
+  <div class="app-actions-row">
+    <button class="app-btn-primary" onclick={handleGenerateClick} disabled={!loading && (!rawIdea.trim() || !llmConnected)}>
       {loading ? 'Generating… Click to stop' : 'Generate Story'}
     </button>
     <button class="secondary" onclick={saveStory} disabled={!story}>Save</button>
@@ -270,7 +270,7 @@
       {showRawJson ? 'Hide Raw JSON' : 'Show Raw JSON'}
     </button>
   </div>
-  <div class="actions">
+  <div class="app-actions-row">
     {#each Object.entries(STORY_ACTIONS) as [action, label]}
       <button class="secondary" type="button" onclick={() => generateStory(action)} disabled={!story || loading || !llmConnected}>
         {label}
@@ -466,17 +466,11 @@
 
 <style>
   .story-page { display: grid; gap: 0.75rem; margin-top: 0; }
-  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-  h2 { margin: 0; color: var(--lb-page-heading, #0f172a); }
   textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.6rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
   .setup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem; }
   .setup-grid label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--lb-text-2, #475569); }
   .setup-grid input { border: 1px solid var(--lb-input-border, #cbd5e1); border-radius: 6px; padding: 0.45rem 0.55rem; background: var(--lb-input-bg, #fff); color: var(--lb-input-fg, #0f172a); }
-  .actions { display: flex; gap: 0.5rem; }
-  .actions { flex-wrap: wrap; }
-  button { border: 1px solid var(--lb-accent-2, #2563eb); background: linear-gradient(135deg, var(--lb-accent-1, #2563eb), var(--lb-accent-2, #1d4ed8)); color: #fff; border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
-  .reset-btn { border-color: var(--lb-btn-secondary-border, #94a3b8); background: var(--lb-btn-secondary-bg, #fff); color: var(--lb-btn-secondary-fg, #334155); }
-  .reset-btn:hover { border-color: var(--lb-border-2, #64748b); background: rgba(71, 85, 105, 0.5); }
+  button { border-radius: 6px; padding: 0.4rem 0.75rem; cursor: pointer; }
   button.secondary { background: rgba(51, 65, 85, 0.75); border-color: var(--lb-border-1, #334155); color: var(--lb-text-1, #fff); }
   button.ghost { border-color: var(--lb-border-1, #94a3b8); background: transparent; color: var(--lb-text-2, #334155); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -495,6 +489,4 @@
   .meta { color: var(--lb-page-muted, #334155); font-size: 0.9rem; }
   .tags { color: #7dd3fc; }
   pre { background: #0f172a; color: #e2e8f0; padding: 0.6rem; border-radius: 6px; overflow: auto; }
-  .error { color: #fca5a5; }
-  .ok { color: #6ee7b7; }
 </style>

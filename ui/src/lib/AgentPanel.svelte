@@ -1578,96 +1578,138 @@
     cursor: pointer;
   }
 
-  :global(.dark-ui-world) .agent-step {
+  :global(.dark-ui-world) .agent-step,
+  :global(.dark-ui-character) .agent-step {
     border-color: #334155;
     background: linear-gradient(180deg, #1e293b 0%, #111827 100%);
     color: #cbd5e1;
   }
 
-  :global(.dark-ui-world) .step-index {
+  :global(.dark-ui-world) .step-index,
+  :global(.dark-ui-character) .step-index {
     background: #1e3a8a;
     color: #dbeafe;
   }
 
-  :global(.dark-ui-world) .agent-step.active {
+  :global(.dark-ui-world) .agent-step.active,
+  :global(.dark-ui-character) .agent-step.active {
     background: linear-gradient(135deg, #2563eb, #1d4ed8);
     border-color: #1d4ed8;
     color: #eff6ff;
   }
 
   :global(.dark-ui-world) .panel,
+  :global(.dark-ui-character) .panel,
   :global(.dark-ui-world) .review-panel,
+  :global(.dark-ui-character) .review-panel,
   :global(.dark-ui-world) .module-runner,
+  :global(.dark-ui-character) .module-runner,
   :global(.dark-ui-world) .review-compare,
+  :global(.dark-ui-character) .review-compare,
   :global(.dark-ui-world) .summary-content,
-  :global(.dark-ui-world) .save-card {
+  :global(.dark-ui-character) .summary-content,
+  :global(.dark-ui-world) .save-card,
+  :global(.dark-ui-character) .save-card {
     background: rgba(15, 23, 42, 0.55);
     border-color: #334155;
     color: #e2e8f0;
   }
 
-  :global(.dark-ui-world) .spawn-section {
+  :global(.dark-ui-world) .spawn-section,
+  :global(.dark-ui-character) .spawn-section {
     background: rgba(30, 41, 59, 0.5);
     border-color: #475569;
   }
 
-  :global(.dark-ui-world) .compare-col.wip {
+  :global(.dark-ui-world) .compare-col.wip,
+  :global(.dark-ui-character) .compare-col.wip {
     background: rgba(30, 58, 138, 0.25);
     border-left-color: #334155;
   }
 
   :global(.dark-ui-world) .character-card,
+  :global(.dark-ui-character) .character-card,
   :global(.dark-ui-world) .character-header,
+  :global(.dark-ui-character) .character-header,
   :global(.dark-ui-world) .character-compact-header,
+  :global(.dark-ui-character) .character-compact-header,
   :global(.dark-ui-world) .character-body,
-  :global(.dark-ui-world) .empty-state {
+  :global(.dark-ui-character) .character-body,
+  :global(.dark-ui-world) .empty-state,
+  :global(.dark-ui-character) .empty-state {
     background: rgba(15, 23, 42, 0.55);
     border-color: #334155;
     color: #cbd5e1;
   }
 
   :global(.dark-ui-world) .module-runner label,
+  :global(.dark-ui-character) .module-runner label,
   :global(.dark-ui-world) .spawn-label,
+  :global(.dark-ui-character) .spawn-label,
   :global(.dark-ui-world) .review-headline,
+  :global(.dark-ui-character) .review-headline,
   :global(.dark-ui-world) .compact-name,
-  :global(.dark-ui-world) .review-panel-header h3 {
+  :global(.dark-ui-character) .compact-name,
+  :global(.dark-ui-world) .review-panel-header h3,
+  :global(.dark-ui-character) .review-panel-header h3 {
     color: #e2e8f0;
   }
 
   :global(.dark-ui-world) .compact-hook,
+  :global(.dark-ui-character) .compact-hook,
   :global(.dark-ui-world) .summary-loading,
-  :global(.dark-ui-world) .empty {
+  :global(.dark-ui-character) .summary-loading,
+  :global(.dark-ui-world) .empty,
+  :global(.dark-ui-character) .empty {
     color: #94a3b8;
   }
 
   :global(.dark-ui-world) .module-runner textarea,
+  :global(.dark-ui-character) .module-runner textarea,
   :global(.dark-ui-world) .edit-area,
+  :global(.dark-ui-character) .edit-area,
   :global(.dark-ui-world) .portrait-panel textarea,
+  :global(.dark-ui-character) .portrait-panel textarea,
   :global(.dark-ui-world) .filename-input,
+  :global(.dark-ui-character) .filename-input,
   :global(.dark-ui-world) .spawn-input,
+  :global(.dark-ui-character) .spawn-input,
   :global(.dark-ui-world) .spawn-context,
-  :global(.dark-ui-world) .char-name-input {
+  :global(.dark-ui-character) .spawn-context,
+  :global(.dark-ui-world) .char-name-input,
+  :global(.dark-ui-character) .char-name-input {
     background: #1e293b;
     border-color: #334155;
     color: #e2e8f0;
   }
 
   :global(.dark-ui-world) .suggest-btn,
+  :global(.dark-ui-character) .suggest-btn,
   :global(.dark-ui-world) .random-btn,
+  :global(.dark-ui-character) .random-btn,
   :global(.dark-ui-world) .select-btn,
+  :global(.dark-ui-character) .select-btn,
   :global(.dark-ui-world) .save-char-btn,
+  :global(.dark-ui-character) .save-char-btn,
   :global(.dark-ui-world) .edit-btn,
+  :global(.dark-ui-character) .edit-btn,
   :global(.dark-ui-world) .confirm-btn,
+  :global(.dark-ui-character) .confirm-btn,
   :global(.dark-ui-world) .cancel-btn,
+  :global(.dark-ui-character) .cancel-btn,
   :global(.dark-ui-world) .delete-btn,
-  :global(.dark-ui-world) .collapse-side-btn {
+  :global(.dark-ui-character) .delete-btn,
+  :global(.dark-ui-world) .collapse-side-btn,
+  :global(.dark-ui-character) .collapse-side-btn {
     background: rgba(51, 65, 85, 0.42);
     border-color: #334155;
     color: #cbd5e1;
   }
 
   :global(.dark-ui-world) .save-btn,
-  :global(.dark-ui-world) .select-btn.is-selected {
+  :global(.dark-ui-character) .save-btn,
+  :global(.dark-ui-world) .select-btn.is-selected,
+  :global(.dark-ui-character) .select-btn.is-selected {
     background: linear-gradient(135deg, #2563eb, #1d4ed8);
     border-color: #1d4ed8;
     color: #eff6ff;

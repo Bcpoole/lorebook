@@ -393,7 +393,7 @@
 <div class="persona-page">
   <div class="page-header">
     <div>
-      <h1>Personas</h1>
+      <h1 class="app-page-title">Personas</h1>
       <p class="subtitle">
         Create and manage AI personas with custom system prompts
       </p>
@@ -658,14 +658,6 @@
     gap: 2rem;
     padding-bottom: 1rem;
     border-bottom: 1px solid #334155;
-  }
-
-  .page-header h1 {
-    margin: 0;
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: #f8fafc;
-    letter-spacing: -0.02em;
   }
 
   .subtitle {
