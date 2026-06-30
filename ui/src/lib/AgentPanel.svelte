@@ -1642,6 +1642,18 @@
     color: #cbd5e1;
   }
 
+  :global(.dark-ui-world) .character-compact-header,
+  :global(.dark-ui-character) .character-compact-header {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.88) 100%);
+    border-bottom-color: #334155;
+  }
+
+  :global(.dark-ui-world) .character-card.selected .character-header,
+  :global(.dark-ui-character) .character-card.selected .character-header {
+    background: linear-gradient(135deg, rgba(30, 64, 175, 0.42) 0%, rgba(30, 41, 59, 0.88) 100%);
+    border-bottom: 1px solid rgba(96, 165, 250, 0.55);
+  }
+
   :global(.dark-ui-world) .module-runner label,
   :global(.dark-ui-character) .module-runner label,
   :global(.dark-ui-world) .spawn-label,
@@ -1703,6 +1715,59 @@
   :global(.dark-ui-character) .collapse-side-btn {
     background: rgba(51, 65, 85, 0.42);
     border-color: #334155;
+    color: #cbd5e1;
+  }
+
+  :global(.dark-ui-world) .character-actions .select-btn,
+  :global(.dark-ui-character) .character-actions .select-btn,
+  :global(.dark-ui-world) .character-actions .save-char-btn,
+  :global(.dark-ui-character) .character-actions .save-char-btn,
+  :global(.dark-ui-world) .character-actions .edit-btn,
+  :global(.dark-ui-character) .character-actions .edit-btn,
+  :global(.dark-ui-world) .character-actions .delete-btn,
+  :global(.dark-ui-character) .character-actions .delete-btn {
+    background: rgba(30, 41, 59, 0.9);
+    border-color: #64748b;
+    color: #e2e8f0;
+    text-shadow: 0 1px 0 rgba(2, 6, 23, 0.4);
+  }
+
+  :global(.dark-ui-world) .character-actions .icon-action,
+  :global(.dark-ui-character) .character-actions .icon-action {
+    width: 2rem;
+    border-radius: 999px;
+    padding: 0;
+  }
+
+  :global(.dark-ui-world) .character-actions .edit-btn.icon-action,
+  :global(.dark-ui-character) .character-actions .edit-btn.icon-action {
+    border-color: #475569;
+    color: #bfdbfe;
+  }
+
+  :global(.dark-ui-world) .character-actions .delete-btn.icon-action,
+  :global(.dark-ui-character) .character-actions .delete-btn.icon-action {
+    border-color: rgba(239, 68, 68, 0.55);
+    color: #fecaca;
+    background: rgba(127, 29, 29, 0.28);
+  }
+
+  :global(.dark-ui-world) .character-actions .edit-btn.icon-action:hover:not(:disabled),
+  :global(.dark-ui-world) .character-actions .delete-btn.icon-action:hover:not(:disabled),
+  :global(.dark-ui-character) .character-actions .edit-btn.icon-action:hover:not(:disabled),
+  :global(.dark-ui-character) .character-actions .delete-btn.icon-action:hover:not(:disabled) {
+    background: rgba(51, 65, 85, 0.96);
+    border-color: #93c5fd;
+  }
+
+  :global(.dark-ui-world) .character-actions .delete-btn.icon-action:hover:not(:disabled),
+  :global(.dark-ui-character) .character-actions .delete-btn.icon-action:hover:not(:disabled) {
+    background: rgba(127, 29, 29, 0.5);
+    border-color: #ef4444;
+  }
+
+  :global(.dark-ui-world) .collapse-btn,
+  :global(.dark-ui-character) .collapse-btn {
     color: #cbd5e1;
   }
 

@@ -103,7 +103,7 @@
   }
 
   async function openRun(itemOrRunId) {
-    if (!showCharacterModal && activeArtifactType !== 'story' && activeArtifactType !== 'location' && activeArtifactType !== 'object') return
+    if (!showCharacterModal && activeArtifactType !== 'story' && activeArtifactType !== 'location' && activeArtifactType !== 'object' && activeArtifactType !== 'world') return
     const targetItem = typeof itemOrRunId === 'object' && itemOrRunId
       ? itemOrRunId
       : items.find((i) => i.run_id === itemOrRunId) ?? null
@@ -128,7 +128,7 @@
       const artifactType = targetItem?.artifact_type || selected?.artifact_type
       if (artifactType === 'story') {
         showStoryModal = true
-      } else if (artifactType === 'location' || artifactType === 'object') {
+      } else if (artifactType === 'location' || artifactType === 'object' || artifactType === 'world') {
         showStoryModal = true
       } else {
         selectedCharacterId = selected?.state?.characters?.[0]?.id ?? ''
@@ -435,7 +435,7 @@
 
   <div class="grid">
     {#each items as item}
-      <PokeHoloCard {item} onopen={showCharacterModal || activeArtifactType === 'story' || activeArtifactType === 'location' || activeArtifactType === 'object' ? openRun : (() => {})} variant={cardVariantFor(item)} />
+      <PokeHoloCard {item} onopen={showCharacterModal || activeArtifactType === 'story' || activeArtifactType === 'location' || activeArtifactType === 'object' || activeArtifactType === 'world' ? openRun : (() => {})} variant={cardVariantFor(item)} />
     {/each}
     {#if !loading && items.length === 0}
       <p class="empty-note">No items found.</p>
@@ -726,6 +726,36 @@
             onEdit={() => {}}
             onDelete={() => {}}
           />
+        {:else if selected?.artifact_type === 'world'}
+          <div class="world-modal-panel">
+            <div class="world-modal-header">
+              <h3>{selectedItem.title || selected.run_id || 'World'}</h3>
+              <button class="modal-close world-close" onclick={closeModal} aria-label="Close">✕</button>
+            </div>
+            <div class="world-modal-content">
+              {#if selected?.state?.world_setting}
+                <section class="world-modal-section">
+                  <h4>World Setting</h4>
+                  <MarkdownBlock source={selected.state.world_setting} />
+                </section>
+              {/if}
+              <section class="world-modal-section">
+                <h4>Characters</h4>
+                {#if Array.isArray(selected?.state?.characters) && selected.state.characters.length > 0}
+                  <ul class="world-character-list">
+                    {#each selected.state.characters as character}
+                      <li class="world-character-item">
+                        <div class="world-character-name">{character?.name || 'Unnamed character'}</div>
+                        <MarkdownBlock source={character?.details || ''} />
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="world-empty">No characters saved in this world.</p>
+                {/if}
+              </section>
+            </div>
+          </div>
         {:else if !modalLoading}
           <div class="modal-empty">
             <p>Could not load artifact data.</p>
@@ -1349,6 +1379,88 @@
     gap: 0.75rem;
     color: #64748b;
     font-size: 0.9rem;
+  }
+
+  .world-modal-panel {
+    width: min(920px, 94vw);
+    max-height: min(86vh, 900px);
+    overflow: auto;
+    border-radius: 14px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+    box-shadow: 0 22px 46px rgba(2, 6, 23, 0.55);
+  }
+
+  .world-modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid #334155;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.92));
+  }
+
+  .world-modal-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #f8fafc;
+  }
+
+  .world-close {
+    position: static;
+    margin-left: auto;
+  }
+
+  .world-modal-content {
+    display: grid;
+    gap: 0.85rem;
+    padding: 0.95rem;
+  }
+
+  .world-modal-section {
+    border: 1px solid #334155;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.75);
+    padding: 0.8rem;
+  }
+
+  .world-modal-section h4 {
+    margin: 0 0 0.55rem;
+    font-size: 0.88rem;
+    color: #93c5fd;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .world-character-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .world-character-item {
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 0.65rem;
+    background: rgba(2, 6, 23, 0.6);
+  }
+
+  .world-character-name {
+    margin-bottom: 0.45rem;
+    font-weight: 700;
+    color: #bfdbfe;
+  }
+
+  .world-empty {
+    margin: 0;
+    color: #94a3b8;
   }
 
   .spinner {

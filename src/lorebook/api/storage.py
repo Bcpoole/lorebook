@@ -147,6 +147,72 @@ def _story_item_slug(section_name: str, item: Any, index: int) -> str:
     return cleaned
 
 
+def _world_character_slug(character: Any, index: int) -> str:
+    if not isinstance(character, dict):
+        return f"character_{index + 1}"
+    base = str(character.get("name") or f"character_{index + 1}")
+    cleaned = re.sub(r"[^\w\-]+", "_", base.strip().lower()).strip("_")
+    if not cleaned:
+        cleaned = f"character_{index + 1}"
+    return cleaned
+
+
+def _write_world_sections(sections_dir: Path, state: dict[str, Any]) -> None:
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    _clear_artifact_dir(sections_dir)
+
+    _write_json_atomic(
+        sections_dir / "world_setting.json",
+        {"section": "world_setting", "data": str(state.get("world_setting") or "")},
+    )
+
+    characters_dir = sections_dir / "characters"
+    characters_dir.mkdir(parents=True, exist_ok=True)
+    used_slugs: set[str] = set()
+    characters = state.get("characters") if isinstance(state.get("characters"), list) else []
+    for index, character in enumerate(characters):
+        slug_base = _world_character_slug(character, index)
+        slug = slug_base
+        suffix = 2
+        while slug in used_slugs:
+            slug = f"{slug_base}_{suffix}"
+            suffix += 1
+        used_slugs.add(slug)
+        payload = _clean_character_for_disk(character) if isinstance(character, dict) else {}
+        _write_json_atomic(
+            characters_dir / f"{slug}.json",
+            {"section": "characters", "index": index, "slug": slug, "data": payload},
+        )
+
+
+def _load_world_sections(sections_dir: Path) -> dict[str, Any] | None:
+    if not sections_dir.exists() or not sections_dir.is_dir():
+        return None
+
+    world_state: dict[str, Any] = {}
+    setting_record = _read_json(sections_dir / "world_setting.json")
+    if isinstance(setting_record, dict):
+        world_state["world_setting"] = str(setting_record.get("data") or "")
+
+    characters_dir = sections_dir / "characters"
+    if characters_dir.exists() and characters_dir.is_dir():
+        records: list[tuple[int, str, Any]] = []
+        for item_path in characters_dir.glob("*.json"):
+            record = _read_json(item_path)
+            if not isinstance(record, dict):
+                continue
+            index = int(record.get("index", 10_000))
+            slug = str(record.get("slug") or item_path.stem)
+            records.append((index, slug, record.get("data")))
+        records.sort(key=lambda entry: (entry[0], entry[1]))
+        world_state["characters"] = [
+            entry[2] if isinstance(entry[2], dict) else {}
+            for entry in records
+        ]
+
+    return world_state if world_state else None
+
+
 def _story_item_image_source(item: dict[str, Any]) -> tuple[bytes, str] | None:
     data_uri = _decode_image_data_uri(str(item.get("image_data") or ""))
     if data_uri is not None:
@@ -897,6 +963,9 @@ def save_run_result(
         story = _story_from_state(raw_state)
         if isinstance(story, dict):
             _write_story_sections(run_dir / "story_sections", story)
+    elif resolved_artifact_type == "world":
+        if isinstance(clean_state, dict):
+            _write_world_sections(run_dir / "world_sections", clean_state)
 
     return {
         "run_id": file_stem,
@@ -930,6 +999,10 @@ def save_draft_state(
         elif sections_dir.exists():
             _clear_artifact_dir(sections_dir)
             sections_dir.rmdir()
+    elif resolved_artifact_type == "world":
+        state = record.get("state") if isinstance(record.get("state"), dict) else {}
+        sections_dir = get_drafts_dir(resolved_artifact_type) / f"{draft_id}_world_sections"
+        _write_world_sections(sections_dir, _clean_state_for_disk(state))
 
     if draft_id == "latest":
         snapshot_record = {**record, "draft_id": DRAFT_SNAPSHOT_ID}
@@ -943,6 +1016,10 @@ def save_draft_state(
             elif snapshot_sections_dir.exists():
                 _clear_artifact_dir(snapshot_sections_dir)
                 snapshot_sections_dir.rmdir()
+        elif resolved_artifact_type == "world":
+            state = snapshot_record.get("state") if isinstance(snapshot_record.get("state"), dict) else {}
+            snapshot_sections_dir = get_drafts_dir(resolved_artifact_type) / f"{DRAFT_SNAPSHOT_ID}_world_sections"
+            _write_world_sections(snapshot_sections_dir, _clean_state_for_disk(state))
     return {
         "draft_id": draft_id,
         "artifact_type": resolved_artifact_type,
@@ -960,6 +1037,22 @@ def load_run(run_id: str, artifact_type: str | None = None) -> dict[str, Any] | 
         return None
     if not str(record.get("artifact_type", "")).strip():
         record["artifact_type"] = resolved_artifact_type
+    if resolved_artifact_type == "story":
+        story_sections = _load_story_sections(run_path.parent / "story_sections")
+        state = record.get("state") if isinstance(record.get("state"), dict) else {}
+        state["story_artifact"] = story_sections if isinstance(story_sections, dict) else {}
+        record["state"] = state
+    elif resolved_artifact_type == "world":
+        world_sections = _load_world_sections(run_path.parent / "world_sections")
+        state = record.get("state") if isinstance(record.get("state"), dict) else {}
+        section_data = world_sections if isinstance(world_sections, dict) else {}
+        state["world_setting"] = str(section_data.get("world_setting") or "")
+        state["characters"] = (
+            section_data.get("characters")
+            if isinstance(section_data.get("characters"), list)
+            else []
+        )
+        record["state"] = state
     state = record.get("state")
     if isinstance(state, dict):
         repaired_state, changed = _repair_character_names(state)
@@ -1008,11 +1101,22 @@ def load_draft_state(draft_id: str = "latest", artifact_type: str | None = None)
         loaded_draft_id = str(record.get("draft_id") or draft_id)
         sections_dir = get_drafts_dir(resolved_artifact_type) / f"{loaded_draft_id}_story_sections"
         story_sections = _load_story_sections(sections_dir)
-        if isinstance(story_sections, dict):
-            state = record.get("state") if isinstance(record.get("state"), dict) else {}
-            current_story = state.get("story_artifact") if isinstance(state.get("story_artifact"), dict) else {}
-            state["story_artifact"] = {**current_story, **story_sections}
-            record["state"] = state
+        state = record.get("state") if isinstance(record.get("state"), dict) else {}
+        state["story_artifact"] = story_sections if isinstance(story_sections, dict) else {}
+        record["state"] = state
+    elif resolved_artifact_type == "world":
+        loaded_draft_id = str(record.get("draft_id") or draft_id)
+        sections_dir = get_drafts_dir(resolved_artifact_type) / f"{loaded_draft_id}_world_sections"
+        world_sections = _load_world_sections(sections_dir)
+        state = record.get("state") if isinstance(record.get("state"), dict) else {}
+        section_data = world_sections if isinstance(world_sections, dict) else {}
+        state["world_setting"] = str(section_data.get("world_setting") or "")
+        state["characters"] = (
+            section_data.get("characters")
+            if isinstance(section_data.get("characters"), list)
+            else []
+        )
+        record["state"] = state
     return record
 
 
@@ -1028,6 +1132,11 @@ def delete_draft_state(draft_id: str = "latest", artifact_type: str | None = Non
         _clear_artifact_dir(story_sections_dir)
         story_sections_dir.rmdir()
         deleted = True
+    world_sections_dir = get_drafts_dir(resolved_artifact_type) / f"{draft_id}_world_sections"
+    if world_sections_dir.exists():
+        _clear_artifact_dir(world_sections_dir)
+        world_sections_dir.rmdir()
+        deleted = True
     if draft_id == "latest":
         snapshot_path = get_drafts_dir(resolved_artifact_type) / f"{DRAFT_SNAPSHOT_ID}.json"
         if snapshot_path.exists():
@@ -1037,6 +1146,11 @@ def delete_draft_state(draft_id: str = "latest", artifact_type: str | None = Non
         if snapshot_sections_dir.exists():
             _clear_artifact_dir(snapshot_sections_dir)
             snapshot_sections_dir.rmdir()
+            deleted = True
+        snapshot_world_sections_dir = get_drafts_dir(resolved_artifact_type) / f"{DRAFT_SNAPSHOT_ID}_world_sections"
+        if snapshot_world_sections_dir.exists():
+            _clear_artifact_dir(snapshot_world_sections_dir)
+            snapshot_world_sections_dir.rmdir()
             deleted = True
     return deleted
 

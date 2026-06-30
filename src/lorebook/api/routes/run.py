@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 from uuid import uuid4
@@ -1154,11 +1155,12 @@ async def story_item_operation(body: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Invalid section '{section}'. Must be one of {sorted(_STORY_ITEM_SECTIONS)}")
 
     state = _normalize_state(raw_idea, body.get("state"))
+    incoming_state = body.get("state") if isinstance(body.get("state"), dict) else {}
     artifact = state.get("story_artifact")
     if not isinstance(artifact, dict):
         raise HTTPException(status_code=400, detail="state.story_artifact is required")
 
-    artifact = dict(artifact)
+    artifact = deepcopy(artifact)
     items: list[Any] = list(artifact.get(section) or [])
 
     if operation == "update":
@@ -1200,6 +1202,21 @@ async def story_item_operation(body: Dict[str, Any]) -> Dict[str, Any]:
 
     artifact[section] = items
     state["story_artifact"] = artifact
+    if isinstance(incoming_state.get("story_setup"), dict):
+        state["story_setup"] = incoming_state["story_setup"]
+    if isinstance(incoming_state.get("story_instruction"), str):
+        state["story_instruction"] = incoming_state["story_instruction"]
+
+    save_draft_state(
+        {
+            "raw_idea": raw_idea,
+            "state": state,
+            "meta": {"mode": "story"},
+            "save_pending": bool(body.get("save_pending", False)),
+        },
+        "latest",
+        artifact_type="story",
+    )
     return {"story_artifact": artifact, "state": state}
 
 
@@ -1278,6 +1295,13 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
         prompt_parts.append(f"World setting:\n{state['world_setting']}")
     prompt_parts.append(f"Existing character ({source_name}):\n{source_details}")
     prompt_parts.append(f"Relationship to create: {relationship}")
+    prompt_parts.append(
+        "Hard constraints:\n"
+        "- Create a NEW, distinct person related to the existing character.\n"
+        "- Do NOT rewrite or clone the existing character.\n"
+        "- Use a different name, appearance, personality, and backstory.\n"
+        "- Explicitly reflect the requested relationship in the new character profile."
+    )
     if context:
         prompt_parts.append(f"Additional context:\n{context}")
     if raw_idea:
@@ -1285,7 +1309,40 @@ async def generate_related_character(body: Dict[str, Any]) -> Dict[str, Any]:
     prompt = "\n\n".join(prompt_parts)
 
     generated = call_local_llm(related_system, prompt, max_length=max_length)
-    name = infer_character_name(generated, fallback="Companion")
+
+    def _norm_text(value: str) -> str:
+        return re.sub(r"\W+", " ", str(value or "").lower()).strip()
+
+    source_norm = _norm_text(source_details)
+    generated_norm = _norm_text(generated)
+    if source_norm and generated_norm and (
+        generated_norm == source_norm or generated_norm in source_norm or source_norm in generated_norm
+    ):
+        retry_prompt = (
+            f"{prompt}\n\n"
+            "CRITICAL RETRY: Your previous output repeated the source character.\n"
+            "Return a clearly different related character with a unique identity and name."
+        )
+        generated = call_local_llm(related_system, retry_prompt, max_length=max_length)
+
+    name = infer_character_name(generated, fallback=f"{relationship_label.title()} Ally")
+    existing_names = {
+        _norm_text(str(character.get("name") or ""))
+        for character in source_characters
+        if isinstance(character, dict)
+    }
+    normalized_name = _norm_text(name)
+    if not normalized_name or normalized_name in existing_names or normalized_name == _norm_text(source_name):
+        base_name = f"{relationship_label.title()} Ally".strip()
+        if not base_name:
+            base_name = "Related Ally"
+        candidate = base_name
+        suffix = 2
+        while _norm_text(candidate) in existing_names:
+            candidate = f"{base_name} {suffix}"
+            suffix += 1
+        name = candidate
+
     inverse_relationship = _inverse_relationship_label(
         relationship_label=relationship_label,
         source_name=source_name,

@@ -65,6 +65,7 @@ def _save_story_sub_artifacts(
                         "details": details,
                         "role": str(entry.get("role") or "character").strip().lower() or "character",
                         "tags": _story_item_tags(entry),
+                        "image_data": str(entry.get("image_data") or ""),
                     }
                 ]
             }

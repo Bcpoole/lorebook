@@ -151,8 +151,9 @@
 <style>
   .story-modal {
     position: relative;
-    background: white;
-    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(71, 85, 105, 0.8);
+    border-radius: 10px;
     padding: 2rem;
     max-height: 85vh;
     overflow-y: auto;
@@ -170,7 +171,8 @@
     cursor: pointer;
     font-size: 1.5rem;
     padding: 0;
-    opacity: 0.6;
+    color: #94a3b8;
+    opacity: 0.8;
     transition: opacity 0.2s;
     z-index: 10;
   }
@@ -187,26 +189,26 @@
   h2 {
     margin: 0;
     font-size: 1.75rem;
-    color: #1e293b;
+    color: #e2e8f0;
   }
 
   h3 {
     margin: 0;
     font-size: 1.1rem;
-    color: #1e293b;
+    color: #e2e8f0;
   }
 
   h4 {
     margin: 0 0 0.5rem 0;
     font-size: 1rem;
-    color: #1e293b;
+    color: #e2e8f0;
   }
 
   .story-section {
     display: grid;
     gap: 0.75rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.9);
   }
 
   .story-section:last-of-type {
@@ -214,13 +216,13 @@
   }
 
   .description {
-    color: #475569;
+    color: #cbd5e1;
     line-height: 1.6;
     margin: 0;
   }
 
   p {
-    color: #475569;
+    color: #cbd5e1;
     line-height: 1.6;
     margin: 0;
   }
@@ -228,7 +230,7 @@
   .plot-list {
     margin: 0;
     padding-left: 1.5rem;
-    color: #475569;
+    color: #cbd5e1;
   }
 
   .plot-list li {
@@ -241,7 +243,7 @@
     padding: 0;
     font-size: 1.1rem;
     font-weight: 600;
-    color: #1e293b;
+    color: #e2e8f0;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -250,7 +252,7 @@
   }
 
   .expandable .section-toggle:hover {
-    color: #2563eb;
+    color: #93c5fd;
   }
 
   .toggle-icon {
@@ -267,8 +269,8 @@
 
   .character-item {
     padding: 1rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(71, 85, 105, 0.8);
     border-radius: 6px;
   }
 

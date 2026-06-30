@@ -50,9 +50,10 @@ describe('StoryPage', () => {
       expect(screen.getByText('Skyfall')).toBeInTheDocument()
       expect(screen.getByText('A compact description.')).toBeInTheDocument()
       expect(screen.getByText('sky')).toBeInTheDocument()
-      expect(screen.getByText('Plot beats')).toBeInTheDocument()
+      expect(screen.getByText(/Plot Beats/)).toBeInTheDocument()
       expect(screen.getByText('Once above the storm.')).toBeInTheDocument()
-      expect(screen.getByText('Generation quality: full')).toBeInTheDocument()
+      // 'full' quality is nominal — no warning should be shown
+      expect(screen.queryByText(/Generation quality/)).not.toBeInTheDocument()
     })
   })
 
@@ -114,7 +115,7 @@ describe('StoryPage', () => {
       generationQuality: '',
     })
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Suggest Next Beat' }))
+    await fireEvent.click(screen.getByRole('button', { name: '+ Suggest Next Beat' }))
 
     expect(fetchMock).toHaveBeenCalled()
     const [, request] = fetchMock.mock.calls[0]

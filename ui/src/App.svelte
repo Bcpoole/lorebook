@@ -1493,6 +1493,52 @@
     }
   }
 
+  async function handleSpawnRelated({ relationship, sourceCharacterIndex, context = '' }) {
+    if (running) return
+    if (!(await ensureApiReady())) {
+      return
+    }
+    if (!currentRawIdea.trim()) {
+      toastMessage = 'Enter a world concept before spawning related characters.'
+      toastVisible = true
+      return
+    }
+
+    running = true
+    try {
+      const res = await fetch('/api/character-related', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_idea: currentRawIdea,
+          state,
+          source_character_index: sourceCharacterIndex,
+          relationship,
+          context,
+          persona_id: experimentationLive.general?.persona || 'blank',
+          experimentation_config: experimentationLive.experimentation,
+        }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        toastMessage = payload?.detail || 'Failed to spawn related character.'
+        toastVisible = true
+        return
+      }
+      const payload = await res.json()
+      state = { ...payload.state, _lastNode: 'character_designer' }
+      pendingSave = { raw_idea: currentRawIdea, state: payload.state, meta: meta ?? {} }
+      activeAgentTab = 'character_designer'
+      toastMessage = 'Related character spawned.'
+      toastVisible = true
+    } catch {
+      toastMessage = 'Failed to spawn related character.'
+      toastVisible = true
+    } finally {
+      running = false
+    }
+  }
+
   function keepNewImage() {
     if (!imageCompare) return
     state = { ...imageCompare.nextState }
@@ -1848,6 +1894,7 @@
           llmConnected={apiReady()}
           reviewState={outputReview}
           reviewPanelOpen={reviewPanelOpen}
+          iconOnlyCharacterActions={true}
           onnext={handleNextStage}
           oncontinue={handleContinue}
           onsave={handleSave}
@@ -1855,6 +1902,7 @@
           onrandomname={handleRandomName}
           onrunmodule={handleModuleRun}
           oncharacterimage={handleCharacterImageGenerate}
+          onspawnrelated={handleSpawnRelated}
           onapprovereview={handleApproveReview}
           onrejectreview={handleRejectReview}
           oneditreview={(value) => updateReviewWip(value)}
