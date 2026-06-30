@@ -7,6 +7,8 @@
 
 Lorebook is a local-first Python app for generating a world setting and companion character through a LangGraph workflow, with a FastAPI backend and a Svelte frontend.
 
+![Pixel art image of a lore book](docs/images/lorebook.png)
+
 ## Project Structure
 
 - `src/lorebook/`: Package source (state, nodes, graph, CLI).
