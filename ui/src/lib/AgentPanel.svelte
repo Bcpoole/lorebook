@@ -608,7 +608,7 @@
                       ♻️
                     </button>
                     <button class="icon-btn" onclick={() => generateImageFromPrompt(index)} disabled={running || imageGeneratingIndex !== null || !llmConnected} title="Generate image from current prompt">
-                      🖼️
+                      🎨
                     </button>
                   </div>
                 </div>

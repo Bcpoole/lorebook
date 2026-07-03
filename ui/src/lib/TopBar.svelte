@@ -1,4 +1,6 @@
 <script>
+  import lorebookMark from "../../../docs/images/lorebook.png";
+
   let {
     meta = {},
     showStats = false,
@@ -24,7 +26,7 @@
 <header>
   <div class="header-shell">
     <div class="brand-wrap">
-      <span class="brand-mark" aria-hidden="true"></span>
+      <img class="brand-mark" src={lorebookMark} alt="" aria-hidden="true" />
       <span class="brand">Lorebook</span>
     </div>
 
@@ -84,11 +86,9 @@
   }
 
   .brand-mark {
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 999px;
-    background: linear-gradient(135deg, #60a5fa, #2563eb);
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+    width: 1.75rem;
+    height: 1.75rem;
+    object-fit: contain;
     flex: 0 0 auto;
   }
 
