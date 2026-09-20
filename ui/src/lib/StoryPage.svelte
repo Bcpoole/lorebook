@@ -2,8 +2,20 @@
   import { onDestroy } from 'svelte'
 
   import MarkdownBlock from './MarkdownBlock.svelte'
+  import StoryOpeningsModule from './StoryOpeningsModule.svelte'
+  import StorySectionModule from './StorySectionModule.svelte'
 
-  const STORY_IMAGE_SECTIONS = ['characters_artifact', 'locations', 'objects', 'examples']
+  const STORY_IMAGE_SECTIONS = ['characters_artifact', 'locations', 'objects']
+  const STORY_FIELD_TOOLTIPS = {
+    plot: 'The central premise and major events. Use prose, bullets, or a scene outline—the story agents treat it as the narrative roadmap.',
+    setting: 'The world and conditions surrounding the story, such as place, era, atmosphere, technology, magic, and social expectations.',
+    style: 'How the story should read, including viewpoint, tone, vocabulary, pacing, detail level, and the balance of narration and dialogue.',
+    history: 'Relevant events that occurred before the opening. Use it to carry forward prior chapters or explain the circumstances that start this story.',
+    characters: 'The people or beings the story agents should portray consistently. Capture their appearance, personality, motives, relationships, and narrative role.',
+    locations: 'Places whose details should remain consistent. Add locations when their atmosphere, layout, history, or rules matter to scenes.',
+    objects: 'Items that need stable identities or behavior, especially tools, clues, artifacts, or possessions with plot significance.',
+    openings: 'Alternative starting points for the story. Each opening can explain when it fits and contain one or more role-based messages that establish the first scene.',
+  }
 
   const SETUP_FIELDS = [
     {
@@ -69,6 +81,9 @@
 
   let activeAbortController = $state(null)
   let activeGenerationId = $state(0)
+  let generationProgress = $state({ activeSection: '', completedSections: [], error: '' })
+  let draftSaveTimer = null
+  let draftSaveState = $state('saved')
   let itemActionKey = $state('')
   let editingItemKey = $state('')
   let editingItemDraft = $state(null)
@@ -117,6 +132,124 @@
       })
     }
     return merged
+  }
+
+  function scheduleStoryDraftSave() {
+    if (!story) return
+    draftSaveState = 'saving'
+    if (draftSaveTimer) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      draftSaveTimer = null
+      void persistStoryDraft()
+    }, 350)
+  }
+
+  async function persistStoryDraft() {
+    if (!story) return
+    try {
+      const res = await fetch('/api/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifact_type: 'story',
+          raw_idea: rawIdea,
+          state: {
+            story_artifact: story,
+            story_setup: storySetup,
+            story_instruction: storyInstruction,
+          },
+          meta: { mode: 'story', source: 'story-editor' },
+        }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new Error(payload?.detail || 'Failed to save Story draft.')
+      }
+      draftSaveState = 'saved'
+    } catch (saveError) {
+      draftSaveState = 'error'
+      error = saveError instanceof Error ? saveError.message : 'Failed to save Story draft.'
+    }
+  }
+
+  function updateStoryField(key, value) {
+    if (!story) return
+    story = { ...story, [key]: value }
+    scheduleStoryDraftSave()
+  }
+
+  function updateStoryTags(value) {
+    updateStoryField(
+      'tags',
+      value
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean),
+    )
+  }
+
+  function addStoryTag(value) {
+    const tag = value.trim().toLowerCase()
+    if (!tag || story?.tags?.includes(tag)) return
+    updateStoryField('tags', [...(story?.tags ?? []), tag])
+  }
+
+  function removeStoryTag(tag) {
+    updateStoryField('tags', (story?.tags ?? []).filter((entry) => entry !== tag))
+  }
+
+  function handleTagKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ',') return
+    event.preventDefault()
+    addStoryTag(event.currentTarget.value)
+    event.currentTarget.value = ''
+  }
+
+  function updatePlotBeatDirect(index, value) {
+    if (!story) return
+    story = {
+      ...story,
+      plot: (story.plot ?? []).map((beat, beatIndex) => (beatIndex === index ? value : beat)),
+    }
+    scheduleStoryDraftSave()
+  }
+
+  function addPlotBeatDirect() {
+    if (!story) return
+    story = { ...story, plot: [...(story.plot ?? []), ''] }
+    scheduleStoryDraftSave()
+  }
+
+  function removePlotBeatDirect(index) {
+    if (!story) return
+    story = { ...story, plot: (story.plot ?? []).filter((_, beatIndex) => beatIndex !== index) }
+    scheduleStoryDraftSave()
+  }
+
+  function updateStoryModuleItem(section, index, item) {
+    if (!story) return
+    const entries = [...(story[section] ?? [])]
+    entries[index] = item
+    story = { ...story, [section]: entries }
+    scheduleStoryDraftSave()
+  }
+
+  function addStoryModuleItem(section) {
+    if (!story) return
+    const defaults = {
+      characters_artifact: { name: '', role: '', summary: '', tags: [] },
+      locations: { name: '', description: '', tags: [] },
+      objects: { name: '', description: '', tags: [] },
+      openings: { description: '', messages: [{ role: 'assistant', content: '' }] },
+    }
+    story = { ...story, [section]: [...(story[section] ?? []), defaults[section]] }
+    scheduleStoryDraftSave()
+  }
+
+  function removeStoryModuleItem(section, index) {
+    if (!story) return
+    story = { ...story, [section]: (story[section] ?? []).filter((_, itemIndex) => itemIndex !== index) }
+    scheduleStoryDraftSave()
   }
 
   function beginEditItem(section, index, item) {
@@ -299,8 +432,10 @@
     loading = true
     error = ''
     savedName = ''
+    generationProgress = { activeSection: '', completedSections: [], error: '' }
     try {
-      const res = await fetch('/api/story', {
+      const isInitialGeneration = action === 'generate' && !story
+      const res = await fetch(isInitialGeneration ? '/api/story/stream' : '/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -319,6 +454,68 @@
         error = payload?.detail || 'Failed to generate story.'
         return
       }
+
+      if (isInitialGeneration && res.body) {
+        const decoder = new TextDecoder()
+        const reader = res.body.getReader()
+        let buffer = ''
+
+        const processEvent = (rawEvent) => {
+          const lines = rawEvent.split('\n')
+          let eventName = 'message'
+          let data = ''
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventName = line.slice(6).trim()
+            } else if (line.startsWith('data:')) {
+              data += `${line.slice(5).trim()}\n`
+            }
+          }
+          if (!data) return
+          const payload = JSON.parse(data.trim())
+
+          if (eventName === 'story-stage-start') {
+            generationProgress = {
+              ...generationProgress,
+              activeSection: payload.section ?? '',
+            }
+          } else if (eventName === 'story-section-complete') {
+            story = payload.story_artifact ?? story
+            generationProgress = {
+              ...generationProgress,
+              completedSections: [...new Set([...generationProgress.completedSections, payload.section])],
+            }
+          } else if (eventName === 'story-complete') {
+            story = payload.story_artifact ?? payload.state?.story_artifact ?? story
+            generationQuality = payload.generation_quality ?? ''
+            if (payload.story_setup) {
+              storySetup = { ...defaultStorySetup(), ...payload.story_setup }
+            }
+            if (typeof payload.story_instruction === 'string') {
+              storyInstruction = payload.story_instruction
+            }
+            generationProgress = { ...generationProgress, activeSection: '' }
+          } else if (eventName === 'story-error') {
+            generationProgress = { ...generationProgress, error: payload.detail ?? 'Story generation failed.' }
+            error = generationProgress.error
+          }
+        }
+
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '')
+          let splitIndex = buffer.indexOf('\n\n')
+          while (splitIndex !== -1) {
+            const rawEvent = buffer.slice(0, splitIndex).trim()
+            buffer = buffer.slice(splitIndex + 2)
+            if (rawEvent) processEvent(rawEvent)
+            splitIndex = buffer.indexOf('\n\n')
+          }
+        }
+        return
+      }
+
       const payload = await res.json()
       story = payload.story_artifact ?? payload.state?.story_artifact ?? null
       generationQuality = payload.generation_quality ?? ''
@@ -370,6 +567,7 @@
     story = null
     savedName = ''
     generationQuality = ''
+    generationProgress = { activeSection: '', completedSections: [], error: '' }
     storySetup = defaultStorySetup()
     storyInstruction = ''
     editingOverview = false
@@ -381,6 +579,11 @@
 
   onDestroy(() => {
     stopStoryGeneration()
+    if (draftSaveTimer) {
+      clearTimeout(draftSaveTimer)
+      draftSaveTimer = null
+      void persistStoryDraft()
+    }
   })
 </script>
 
@@ -432,6 +635,27 @@
     <p class="quality-warning">⚠ Story generated with reduced quality — the AI had difficulty producing structured output. Consider regenerating.</p>
   {/if}
 
+  {#if loading || generationProgress.completedSections.length}
+    <section class="generation-progress" aria-live="polite">
+      <h3>Generation progress</h3>
+      {#if generationProgress.activeSection}
+        <p>Generating {generationProgress.activeSection.replaceAll('_', ' ')}…</p>
+      {:else if !loading}
+        <p>Generation complete.</p>
+      {/if}
+      <div class="progress-stages">
+        {#each ['overview', 'title', 'plot', 'history', 'characters_artifact', 'locations', 'objects', 'openings'] as section}
+          <span class:complete={generationProgress.completedSections.includes(section)} class:active={generationProgress.activeSection === section}>
+            {section.replaceAll('_', ' ')}
+          </span>
+        {/each}
+      </div>
+      {#if generationProgress.error}
+        <p class="error">{generationProgress.error}</p>
+      {/if}
+    </section>
+  {/if}
+
   <!-- Loading skeleton -->
   {#if loading && !story}
     <div class="skeleton-grid">
@@ -443,7 +667,115 @@
   {/if}
 
   {#if story}
-    <div class="story-grid" class:regenerating={loading}>
+    <div class="story-editor" class:regenerating={loading}>
+      <section class="story-module overview-module">
+        <header>
+          <h3>Story overview</h3>
+          <span class="draft-status">{draftSaveState === 'saving' ? 'Saving…' : draftSaveState === 'error' ? 'Save failed' : 'Saved to draft'}</span>
+        </header>
+        <label class="module-field">
+          <span>Title</span>
+          <input type="text" value={story.title ?? ''} placeholder="Story title" aria-label="Story title" oninput={(event) => updateStoryField('title', event.currentTarget.value)} disabled={loading} />
+        </label>
+        <label class="module-field">
+          <span>Summary</span>
+          <textarea rows="3" value={story.description ?? ''} placeholder="A concise overview of the scenario" aria-label="Story summary" oninput={(event) => updateStoryField('description', event.currentTarget.value)} disabled={loading}></textarea>
+        </label>
+        <div class="module-field">
+          <span>Tags</span>
+          <div class="tag-editor">
+            {#each story.tags ?? [] as tag}
+              <button type="button" class="tag-badge" onclick={() => removeStoryTag(tag)} disabled={loading} title={`Remove ${tag}`}>{tag} ×</button>
+            {/each}
+            <input type="text" placeholder="Add tag and press Enter" aria-label="Add story tag" onkeydown={handleTagKeydown} disabled={loading} />
+          </div>
+        </div>
+      </section>
+
+      <section class="story-module">
+        <header>
+          <h3>Plot</h3>
+          <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.plot} aria-label={STORY_FIELD_TOOLTIPS.plot}>?</span>
+        </header>
+        <textarea rows="7" value={story.plot ?? ''} placeholder="Describe the premise and main events..." aria-label="Story plot" oninput={(event) => updateStoryField('plot', event.currentTarget.value)} disabled={loading}></textarea>
+        <div class="module-actions">
+          <button class="ghost small" type="button" onclick={() => generateStory('suggest_next_beat')} disabled={loading || !llmConnected}>Expand plot</button>
+        </div>
+      </section>
+
+      <section class="story-module">
+        <header>
+          <h3>Setting</h3>
+          <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.setting} aria-label={STORY_FIELD_TOOLTIPS.setting}>?</span>
+        </header>
+        <textarea rows="5" value={story.setting ?? ''} placeholder="Describe the world, time, place, and atmosphere..." aria-label="Story setting" oninput={(event) => updateStoryField('setting', event.currentTarget.value)} disabled={loading}></textarea>
+      </section>
+
+      <section class="story-module">
+        <header>
+          <h3>Style</h3>
+          <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.style} aria-label={STORY_FIELD_TOOLTIPS.style}>?</span>
+        </header>
+        <textarea rows="4" value={story.style ?? ''} placeholder="Describe viewpoint, tone, pacing, and prose style..." aria-label="Story style" oninput={(event) => updateStoryField('style', event.currentTarget.value)} disabled={loading}></textarea>
+      </section>
+
+      <section class="story-module">
+        <header>
+          <h3>History</h3>
+          <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.history} aria-label={STORY_FIELD_TOOLTIPS.history}>?</span>
+        </header>
+        <textarea rows="5" value={story.history ?? ''} placeholder="Summarize the events leading into this story..." aria-label="Story history" oninput={(event) => updateStoryField('history', event.currentTarget.value)} disabled={loading}></textarea>
+      </section>
+
+      <StorySectionModule
+        title="Characters"
+        section="characters_artifact"
+        items={story.characters_artifact ?? []}
+        bodyKey="summary"
+        extraKey="tags"
+        tooltip={STORY_FIELD_TOOLTIPS.characters}
+        disabled={loading}
+        onupdate={(index, item) => updateStoryModuleItem('characters_artifact', index, item)}
+        onadd={() => addStoryModuleItem('characters_artifact')}
+        onremove={(index) => removeStoryModuleItem('characters_artifact', index)}
+        onimage={(index) => generateItemImage('characters_artifact', index)}
+      />
+      <StorySectionModule
+        title="Locations"
+        section="locations"
+        items={story.locations ?? []}
+        extraKey="tags"
+        tooltip={STORY_FIELD_TOOLTIPS.locations}
+        disabled={loading}
+        onupdate={(index, item) => updateStoryModuleItem('locations', index, item)}
+        onadd={() => addStoryModuleItem('locations')}
+        onremove={(index) => removeStoryModuleItem('locations', index)}
+        onimage={(index) => generateItemImage('locations', index)}
+      />
+      <StorySectionModule
+        title="Objects"
+        section="objects"
+        items={story.objects ?? []}
+        extraKey="tags"
+        tooltip={STORY_FIELD_TOOLTIPS.objects}
+        disabled={loading}
+        onupdate={(index, item) => updateStoryModuleItem('objects', index, item)}
+        onadd={() => addStoryModuleItem('objects')}
+        onremove={(index) => removeStoryModuleItem('objects', index)}
+        onimage={(index) => generateItemImage('objects', index)}
+      />
+
+      <StoryOpeningsModule
+        openings={story.openings ?? []}
+        disabled={loading}
+        tooltip={STORY_FIELD_TOOLTIPS.openings}
+        onupdate={(index, opening) => updateStoryModuleItem('openings', index, opening)}
+        onadd={() => addStoryModuleItem('openings')}
+        onremove={(index) => removeStoryModuleItem('openings', index)}
+      />
+    </div>
+
+    <div class="story-grid legacy-story-grid" class:regenerating={loading}>
 
       <!-- Overview card -->
       <div class="story-card overview-card">
@@ -892,6 +1224,20 @@
   /* ── Status messages ──────────────────────────────────────────── */
   .quality-warning { color: #fbbf24; font-size: 0.85rem; padding: 0.45rem 0.6rem; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; margin: 0; }
   .malformed-notice { color: #fb923c; font-size: 0.85rem; font-style: italic; margin: 0; }
+  .generation-progress {
+    display: grid; gap: 0.45rem; padding: 0.75rem 0.9rem;
+    border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px;
+    background: rgba(14, 116, 144, 0.12);
+  }
+  .generation-progress h3, .generation-progress p { margin: 0; }
+  .progress-stages { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .progress-stages span {
+    border: 1px solid rgba(100, 116, 139, 0.65); border-radius: 999px;
+    padding: 0.2rem 0.55rem; color: #94a3b8; font-size: 0.78rem;
+  }
+  .progress-stages span.active { border-color: #38bdf8; color: #e0f2fe; }
+  .progress-stages span.complete { border-color: #34d399; color: #d1fae5; }
+  .draft-status { color: var(--lb-text-2, #94a3b8); font-size: 0.8rem; }
 
   /* ── Loading skeleton ─────────────────────────────────────────── */
   .skeleton-grid { display: grid; gap: 0.75rem; }
@@ -910,6 +1256,41 @@
   /* ── Story grid ───────────────────────────────────────────────── */
   .story-grid { display: grid; gap: 0.75rem; transition: opacity 0.2s; }
   .story-grid.regenerating { opacity: 0.6; pointer-events: none; }
+  .legacy-story-grid { display: none; }
+
+  .story-editor {
+    display: grid; gap: 0.8rem; transition: opacity 0.2s;
+    border: 1px solid var(--lb-border-1, #334155); border-radius: 10px;
+    padding: 0.9rem 1rem; background: rgba(15, 23, 42, 0.5);
+  }
+  .story-editor.regenerating { opacity: 0.65; pointer-events: none; }
+  .story-module { display: grid; gap: 0.55rem; border-top: 1px solid rgba(51, 65, 85, 0.7); padding-top: 0.75rem; }
+  .story-module:first-child { border-top: 0; padding-top: 0; }
+  .story-module header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  .story-module h3 { margin: 0; font-size: 1rem; color: var(--lb-text-1, #e2e8f0); }
+  .module-tooltip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1rem; height: 1rem; margin-left: auto; border: 1px solid #64748b;
+    border-radius: 50%; color: #cbd5e1; font-size: 0.7rem; cursor: help;
+  }
+  .module-field { display: grid; gap: 0.3rem; color: var(--lb-text-2, #cbd5e1); font-size: 0.82rem; }
+  .story-module > textarea,
+  .module-field input,
+  .module-field textarea,
+  .tag-editor input {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--lb-border-1, #475569);
+    border-radius: 6px; padding: 0.5rem 0.6rem; background: rgba(30, 41, 59, 0.85);
+    color: var(--lb-text-1, #e2e8f0);
+  }
+  .story-module textarea { resize: vertical; line-height: 1.5; }
+  .tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+  .tag-editor input { flex: 1 1 11rem; min-width: 9rem; }
+  .tag-badge {
+    border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 999px;
+    padding: 0.22rem 0.55rem; background: rgba(14, 116, 144, 0.2);
+    color: #bae6fd; font-size: 0.78rem;
+  }
+  .module-actions { display: flex; gap: 0.4rem; }
 
   /* ── Story cards ──────────────────────────────────────────────── */
   .story-card {

@@ -57,15 +57,15 @@ def test_save_run_precomputes_preview_and_gallery_listing(tmp_path: Path, monkey
                 "story_artifact": {
                     "title": "Storm City",
                     "description": "A city above the clouds with arcane weather engines.",
-                    "plot": ["engine fails"],
+                    "plot": "The engine fails.",
                     "setting": "Cloud belts",
                     "style": "grim",
                     "tags": ["fantasy", "storm"],
                     "characters_artifact": [],
                     "locations": [],
                     "objects": [],
-                    "opening": "",
-                    "examples": [],
+                    "history": "",
+                    "openings": [],
                 },
                 "characters": [{"name": "Ari", "details": "Pilot", "role": "character", "tags": ["pilot"]}],
             },
@@ -233,15 +233,20 @@ def test_story_draft_writes_section_files(tmp_path: Path, monkeypatch) -> None:
                 "story_artifact": {
                     "title": "Skyfall",
                     "description": "A short story setup with enough detail.",
-                    "plot": ["A", "B", "C"],
+                    "plot": "A leads to B and then C.",
                     "setting": "Cloud city",
                     "style": "adventure",
+                    "history": "The eastern dock fell yesterday.",
                     "tags": ["sky"],
                     "characters_artifact": [{"name": "Ari", "role": "pilot", "summary": "ace"}],
                     "locations": [{"name": "Sky Port", "description": "Busy port"}],
                     "objects": [{"name": "Silver Keycard", "description": "Worn"}],
-                    "opening": "Open.",
-                    "examples": [{"label": "Sample Passage", "text": "Wind screamed."}],
+                    "openings": [
+                        {
+                            "description": "Choose this opening for an immediate crisis.",
+                            "messages": [{"role": "assistant", "content": "Wind screamed."}],
+                        }
+                    ],
                 }
             },
             "meta": {"mode": "story"},
@@ -254,7 +259,15 @@ def test_story_draft_writes_section_files(tmp_path: Path, monkeypatch) -> None:
     assert (drafts_dir / "latest_story_sections" / "overview.json").exists()
     assert (drafts_dir / "latest_story_sections" / "characters_artifact" / "ari.json").exists()
     assert (drafts_dir / "latest_story_sections" / "objects" / "silver_keycard.json").exists()
-    assert (drafts_dir / "snapshot_story_sections" / "examples" / "sample_passage.json").exists()
+    assert (drafts_dir / "snapshot_story_sections" / "history.json").exists()
+    assert (drafts_dir / "snapshot_story_sections" / "openings" / "choose_this_opening_for_an_immediate_crisis.json").exists()
+    loaded = storage.load_draft_state(artifact_type="story")
+    assert loaded is not None
+    artifact = loaded["state"]["story_artifact"]
+    assert artifact["plot"] == "A leads to B and then C."
+    assert artifact["history"] == "The eastern dock fell yesterday."
+    assert artifact["openings"][0]["messages"][0]["content"] == "Wind screamed."
+    assert "examples" not in artifact
 
 
 def test_story_run_writes_section_files(tmp_path: Path, monkeypatch) -> None:
@@ -267,15 +280,15 @@ def test_story_run_writes_section_files(tmp_path: Path, monkeypatch) -> None:
                 "story_artifact": {
                     "title": "Skyfall",
                     "description": "A short story setup with enough detail.",
-                    "plot": ["A", "B", "C"],
+                    "plot": "A leads to B and then C.",
                     "setting": "Cloud city",
                     "style": "adventure",
                     "tags": ["sky"],
                     "characters_artifact": [{"name": "Ari", "role": "pilot", "summary": "ace"}],
                     "locations": [{"name": "Sky Port", "description": "Busy port"}],
                     "objects": [{"name": "Silver Keycard", "description": "Worn"}],
-                    "opening": "Open.",
-                    "examples": [{"label": "Sample Passage", "text": "Wind screamed."}],
+                    "history": "The eastern dock fell yesterday.",
+                    "openings": [{"description": "", "messages": [{"role": "assistant", "content": "Open."}]}],
                 }
             },
             "meta": {"source": "story"},
@@ -303,7 +316,7 @@ def test_story_item_image_is_colocated_and_uses_image_name(tmp_path: Path, monke
                 "story_artifact": {
                     "title": "Skyfall",
                     "description": "A short story setup with enough detail.",
-                    "plot": ["A", "B", "C"],
+                    "plot": "A leads to B and then C.",
                     "setting": "Cloud city",
                     "style": "adventure",
                     "tags": ["sky"],
@@ -319,8 +332,8 @@ def test_story_item_image_is_colocated_and_uses_image_name(tmp_path: Path, monke
                             "image_data": "data:image/png;base64,AAAA",
                         }
                     ],
-                    "opening": "Open.",
-                    "examples": [],
+                    "history": "The eastern dock fell yesterday.",
+                    "openings": [{"description": "", "messages": [{"role": "assistant", "content": "Open."}]}],
                 }
             },
             "meta": {"mode": "story"},

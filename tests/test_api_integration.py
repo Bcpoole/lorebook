@@ -410,12 +410,12 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
         run_routes,
         "call_local_llm",
         lambda *args, **kwargs: (
-            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":["A","B","C","D","E"],'
-            '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
+            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":"A then B then C.",'
+            '"setting":"Sky archipelago","style":"heroic","history":"The storm arrived yesterday.","tags":["sky"],'
             '"characters_artifact":[{"name":"Ari","role":"pilot","summary":"ace","tags":["pilot"]}],'
             '"locations":[{"name":"Dock","description":"windy","tags":["port"]}],'
             '"objects":[{"name":"Compass","description":"arcane","tags":["artifact"]}],'
-            '"opening":"Once above the storm.","examples":[{"label":"sample","text":"line"}]}'
+            '"openings":[{"description":"","messages":[{"role":"assistant","content":"Once above the storm."}]}]}'
         ),
     )
 
@@ -444,9 +444,9 @@ def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
         run_routes,
         "call_local_llm",
         lambda *args, **kwargs: (
-            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":["A","B","C","D","E"],'
+            '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":"A then B then C.",'
             '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
-            '"characters_artifact":[],"locations":[],"objects":[],"opening":"","examples":[]}'
+            '"history":"Yesterday.","characters_artifact":[],"locations":[],"objects":[],"openings":[]}'
         ),
     )
 
@@ -471,9 +471,9 @@ def test_story_endpoint_accepts_setup_and_instruction(monkeypatch) -> None:
         calls["prompt"] = prompt
         return (
             '{"title":"Skyfall","description":"A compact description with enough detail for quality thresholds.","'
-            'plot":["A","B","C","D","E"],'
+            'plot":"A then B then C.",'
             '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
-            '"characters_artifact":[],"locations":[],"objects":[],"opening":"Once above the storm.","examples":[]}'
+            '"history":"Yesterday.","characters_artifact":[],"locations":[],"objects":[],"openings":[{"description":"","messages":[{"role":"assistant","content":"Once above the storm."}]}]}'
         )
 
     monkeypatch.setattr(run_routes, "call_local_llm", fake_llm)
@@ -510,9 +510,9 @@ def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
         calls["prompt"] = prompt
         return (
             '{"title":"Skyfall","description":"A compact description with enough detail for quality thresholds across every section in the payload.",'
-            '"plot":["A","B","C","D","E","F"],'
+            '"plot":"A then B then C.",'
             '"setting":"Sky archipelago","style":"heroic","tags":["sky"],'
-            '"characters_artifact":[],"locations":[],"objects":[],"opening":"New opening.","examples":[]}'
+            '"history":"Yesterday.","characters_artifact":[],"locations":[],"objects":[],"openings":[{"description":"","messages":[{"role":"assistant","content":"New opening."}]}]}'
         )
 
     monkeypatch.setattr(run_routes, "call_local_llm", fake_llm)
@@ -527,15 +527,15 @@ def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
                 "story_artifact": {
                     "title": "Old",
                     "description": "Old description text with enough words to satisfy minimum threshold.",
-                    "plot": ["A", "B", "C", "D", "E"],
+                    "plot": "A then B then C.",
                     "setting": "Old setting",
                     "style": "neutral",
                     "tags": [],
                     "characters_artifact": [],
                     "locations": [],
                     "objects": [],
-                    "opening": "Old opening.",
-                    "examples": [],
+                    "history": "Earlier events.",
+                    "openings": [{"description": "", "messages": [{"role": "assistant", "content": "Old opening."}]}],
                 }
             },
         },
@@ -543,7 +543,7 @@ def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
     assert res.status_code == 200
     payload = res.json()
     assert payload["action"] == "rewrite_opening"
-    assert payload["story_artifact"]["opening"] == "New opening."
+    assert payload["story_artifact"]["openings"][0]["messages"][0]["content"] == "New opening."
     assert "Current context JSON:" in calls["prompt"]
 
 
@@ -556,15 +556,15 @@ def test_story_action_fallback_preserves_existing_sections(monkeypatch) -> None:
     existing_story = {
         "title": "Original",
         "description": "Original description with enough words to keep quality checks happy.",
-        "plot": ["A", "B", "C", "D", "E"],
+        "plot": "A then B then C.",
         "setting": "Hundred Acre Wood",
         "style": "whimsical",
         "tags": ["adventure"],
         "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
         "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
         "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
-        "opening": "It was a sunny morning.",
-        "examples": [{"label": "sample", "text": "sample text"}],
+        "history": "Earlier events.",
+        "openings": [{"description": "", "messages": [{"role": "assistant", "content": "It was a sunny morning."}]}],
     }
 
     client = TestClient(create_app())
@@ -581,7 +581,7 @@ def test_story_action_fallback_preserves_existing_sections(monkeypatch) -> None:
     assert payload["generation_quality"] == "fallback"
     assert payload["story_artifact"]["title"] == "Original"
     assert payload["story_artifact"]["objects"][0]["name"] == "Honey Pot"
-    assert payload["story_artifact"]["opening"] == "It was a sunny morning."
+    assert payload["story_artifact"]["openings"][0]["messages"][0]["content"] == "It was a sunny morning."
 
 
 def test_story_item_update_and_delete(monkeypatch) -> None:
@@ -593,15 +593,15 @@ def test_story_item_update_and_delete(monkeypatch) -> None:
     base_story = {
         "title": "Original",
         "description": "Original description with enough words to keep quality checks happy.",
-        "plot": ["A", "B", "C", "D", "E"],
+        "plot": "A then B then C.",
         "setting": "Hundred Acre Wood",
         "style": "whimsical",
         "tags": ["adventure"],
         "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
         "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
         "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
-        "opening": "It was a sunny morning.",
-        "examples": [{"label": "sample", "text": "sample text"}],
+        "history": "Earlier events.",
+        "openings": [{"description": "", "messages": [{"role": "assistant", "content": "It was a sunny morning."}]}],
     }
 
     update_res = client.post(
@@ -643,15 +643,15 @@ def test_story_item_prompt_generation(monkeypatch) -> None:
     base_story = {
         "title": "Original",
         "description": "Original description with enough words to keep quality checks happy.",
-        "plot": ["A", "B", "C", "D", "E"],
+        "plot": "A then B then C.",
         "setting": "Hundred Acre Wood",
         "style": "whimsical",
         "tags": ["adventure"],
         "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
         "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
         "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
-        "opening": "It was a sunny morning.",
-        "examples": [{"label": "sample", "text": "sample text"}],
+        "history": "Earlier events.",
+        "openings": [{"description": "", "messages": [{"role": "assistant", "content": "It was a sunny morning."}]}],
     }
 
     prompt_res = client.post(
@@ -685,15 +685,15 @@ def test_story_item_image_mode_returns_image_name(monkeypatch) -> None:
     base_story = {
         "title": "Original",
         "description": "Original description with enough words to keep quality checks happy.",
-        "plot": ["A", "B", "C", "D", "E"],
+        "plot": "A then B then C.",
         "setting": "Hundred Acre Wood",
         "style": "whimsical",
         "tags": ["adventure"],
         "characters_artifact": [{"name": "Pooh", "role": "lead", "summary": "honey", "tags": ["hero"]}],
         "locations": [{"name": "Forest", "description": "Trees", "tags": ["woods"]}],
         "objects": [{"name": "Honey Pot", "description": "Sticky", "tags": ["honey"]}],
-        "opening": "It was a sunny morning.",
-        "examples": [{"label": "sample", "text": "sample text"}],
+        "history": "Earlier events.",
+        "openings": [{"description": "", "messages": [{"role": "assistant", "content": "It was a sunny morning."}]}],
     }
 
     image_res = client.post(
@@ -726,7 +726,7 @@ def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
             '{"title":"Fenced","description":"A full fenced JSON payload with sufficient words for direct parsing.",'
             '"plot":["A","B","C","D","E"],'
             '"setting":"Cloud city","style":"adventure","tags":["sky"],'
-            '"characters_artifact":[],"locations":[],"objects":[],"opening":"Open.","examples":[]}'
+            '"history":"Earlier events.","characters_artifact":[],"locations":[],"objects":[],"openings":[{"description":"","messages":[{"role":"assistant","content":"Open."}]}]}'
             "\n```"
         ),
     )
@@ -739,47 +739,88 @@ def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
     assert payload["generation_quality"] == "full"
 
 
-def test_story_endpoint_recovers_embedded_story_json_in_description(monkeypatch) -> None:
+def test_story_endpoint_orchestrates_sections_with_safe_token_floors(monkeypatch) -> None:
     from lorebook.api.routes import run as run_routes
 
-    embedded = {
-        "title": "Recovered",
-        "description": "Recovered description with enough words to satisfy the quality gate directly.",
-        "plot": ["A", "B", "C", "D", "E"],
-        "setting": "Recovered setting",
-        "style": "mythic",
-        "tags": ["recovered"],
-        "characters_artifact": [],
-        "locations": [],
-        "objects": [],
-        "opening": "Recovered opening.",
-        "examples": [],
-    }
+    budgets: list[int] = []
 
-    malformed_outer = {
-        "title": "Outer",
-        "description": json.dumps(embedded),
-        "plot": [json.dumps(embedded)[:120]],
-        "setting": "",
-        "style": "",
-        "tags": [],
-        "characters_artifact": [],
-        "locations": [],
-        "objects": [],
-        "opening": "",
-        "examples": [],
-    }
+    def generate(system_prompt: str, *_args, **kwargs) -> str:
+        budgets.append(kwargs["max_length"])
+        if "orchestrator" in system_prompt:
+            return json.dumps(
+                {
+                    "description": "A pilot races a gathering storm to save her floating home.",
+                    "setting": "A floating archipelago",
+                    "style": "adventure",
+                    "tags": ["sky"],
+                    "brief": "A daring pilot must outrun a storm and protect her home.",
+                }
+            )
+        if "title specialist" in system_prompt:
+            return "Stormbound"
+        if "plot specialist" in system_prompt:
+            return "- Alarm\n- Departure\n- Setback\n- Revelation\n- Return"
+        if "story-history specialist" in system_prompt:
+            return "The storm destroyed the eastern docks the previous night."
+        if "character specialist" in system_prompt:
+            return "Name: Mira\nRole: pilot\nSummary: A reckless sky pilot.\nTags: pilot"
+        if "location specialist" in system_prompt:
+            return "Name: Cloudport\nDescription: A harbor among storm clouds.\nTags: sky"
+        if "story-object specialist" in system_prompt:
+            return "Name: Storm compass\nDescription: A compass that points toward danger.\nTags: relic"
+        if "opening-scene specialist" in system_prompt:
+            return "The first siren sounded before dawn."
+        raise AssertionError(f"Unexpected system prompt: {system_prompt}")
 
-    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: json.dumps(malformed_outer))
+    monkeypatch.setattr(run_routes, "call_local_llm", generate)
 
     client = TestClient(create_app())
-    res = client.post("/api/story", json={"raw_idea": "embedded json prompt"})
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["story_artifact"]["title"] == "Recovered"
-    assert payload["story_artifact"]["opening"] == "Recovered opening."
-    assert payload["story_artifact"]["style"] == "mythic"
-    assert payload["generation_quality"] == "full"
+    response = client.post(
+        "/api/story",
+        json={"raw_idea": "A sky pilot faces a storm.", "experimentation_config": {"maxLength": 1}},
+    )
+
+    assert response.status_code == 200
+    artifact = response.json()["story_artifact"]
+    assert artifact["title"] == "Stormbound"
+    assert artifact["plot"] == "- Alarm\n- Departure\n- Setback\n- Revelation\n- Return"
+    assert artifact["history"] == "The storm destroyed the eastern docks the previous night."
+    assert artifact["openings"][0]["messages"][0]["content"] == "The first siren sounded before dawn."
+    assert len(budgets) == 8
+    assert min(budgets) >= 80
+
+
+def test_story_sections_clean_markdown_labels_and_preserve_required_headings(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    def generate(system_prompt: str, *_args, **_kwargs) -> str:
+        if "orchestrator" in system_prompt:
+            return '{"description":"A contest becomes a crisis.","setting":"A detailed market with rules and atmosphere.","style":"comic adventure","tags":[],"brief":"Contest crisis."}'
+        if "title specialist" in system_prompt:
+            return "**The Great Grocery Gauntlet**"
+        if "plot specialist" in system_prompt:
+            return "# PLOT / PREMISE\nA contest becomes a crisis."
+        if "story-history specialist" in system_prompt:
+            return "# The Setting\n\n## What Came Before\nThe market lost power."
+        if "character specialist" in system_prompt:
+            return "Name: Kai \"The Aisle Runner\" Nakamura\nRole: courier\nSummary: Fast.\nTags: runner"
+        if "location specialist" in system_prompt:
+            return "Name: **Iron Fist Aisle 7**\nDescription: Narrow.\nTags: aisle"
+        if "story-object specialist" in system_prompt:
+            return "Name: **Discount Bell**\nDescription: Loud.\nTags: bell"
+        if "opening-scene specialist" in system_prompt:
+            return "The bell rang."
+        raise AssertionError(system_prompt)
+
+    monkeypatch.setattr(run_routes, "call_local_llm", generate)
+    payload = TestClient(create_app()).post("/api/story", json={"raw_idea": "market contest"}).json()
+    artifact = payload["story_artifact"]
+    assert artifact["title"] == "The Great Grocery Gauntlet"
+    assert artifact["characters_artifact"][0]["name"] == "Kai Nakamura"
+    assert artifact["locations"][0]["name"] == "Iron Fist Aisle 7"
+    assert artifact["objects"][0]["name"] == "Discount Bell"
+    assert artifact["plot"].startswith("# PLOT / PREMISE")
+    assert artifact["history"].startswith("# The Setting\n\n## What Came Before")
 
 
 def test_character_endpoint_returns_single_character(monkeypatch) -> None:

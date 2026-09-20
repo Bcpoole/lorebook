@@ -13,6 +13,11 @@ _NAME_FIELD_PATTERN = re.compile(
 )
 _HEADER_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _MARKDOWN_DECORATION_PATTERN = re.compile(r"^[*_`#\-\s]+|[*_`\s]+$")
+_NAME_NICKNAME_PATTERN = re.compile(r'\s+(?:"[^"]+"|“[^”]+”|\([^)]*\))')
+_NAME_TITLE_PREFIX_PATTERN = re.compile(
+    r"^(?:dr|mr|mrs|ms|sir|dame|lord|lady|capt|captain|commander|prof)\.?\s+",
+    re.IGNORECASE,
+)
 
 
 def infer_character_name(details: str, fallback: str = "") -> str:
@@ -51,5 +56,11 @@ def should_replace_character_name(current_name: str) -> bool:
 
 
 def _clean_name(value: str, fallback: str) -> str:
+    return clean_character_name(value, fallback)
+
+
+def clean_character_name(value: str, fallback: str = "") -> str:
     cleaned = _MARKDOWN_DECORATION_PATTERN.sub("", value).strip()
+    cleaned = _NAME_NICKNAME_PATTERN.sub("", cleaned)
+    cleaned = _NAME_TITLE_PREFIX_PATTERN.sub("", cleaned)
     return cleaned or fallback.strip()

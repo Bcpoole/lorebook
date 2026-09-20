@@ -120,16 +120,16 @@ def _story_section_payloads(story: dict[str, Any]) -> dict[str, Any]:
         "overview": {
             "title": str(story.get("title") or ""),
             "description": str(story.get("description") or ""),
-            "setting": str(story.get("setting") or ""),
-            "style": str(story.get("style") or ""),
             "tags": story.get("tags") if isinstance(story.get("tags"), list) else [],
         },
-        "plot": story.get("plot") if isinstance(story.get("plot"), list) else [],
+        "plot": str(story.get("plot") or ""),
+        "setting": str(story.get("setting") or ""),
+        "style": str(story.get("style") or ""),
+        "history": str(story.get("history") or ""),
         "characters_artifact": story.get("characters_artifact") if isinstance(story.get("characters_artifact"), list) else [],
         "locations": story.get("locations") if isinstance(story.get("locations"), list) else [],
         "objects": story.get("objects") if isinstance(story.get("objects"), list) else [],
-        "opening": {"opening": str(story.get("opening") or "")},
-        "examples": story.get("examples") if isinstance(story.get("examples"), list) else [],
+        "openings": story.get("openings") if isinstance(story.get("openings"), list) else [],
     }
 
 
@@ -137,8 +137,8 @@ def _story_item_slug(section_name: str, item: Any, index: int) -> str:
     if not isinstance(item, dict):
         return f"{section_name}_{index + 1}"
     base = ""
-    if section_name == "examples":
-        base = str(item.get("label") or item.get("text") or "")
+    if section_name == "openings":
+        base = str(item.get("description") or "")
     else:
         base = str(item.get("name") or "")
     cleaned = re.sub(r"[^\w\-]+", "_", base.strip().lower()).strip("_")
@@ -299,7 +299,7 @@ def _clean_story_artifact_for_record(story: Any) -> Any:
     if not isinstance(story, dict):
         return story
     cleaned = dict(story)
-    for list_key in ("characters_artifact", "locations", "objects", "examples"):
+    for list_key in ("characters_artifact", "locations", "objects", "openings"):
         items = cleaned.get(list_key)
         if not isinstance(items, list):
             continue
@@ -319,7 +319,7 @@ def _write_story_sections(sections_dir: Path, story: dict[str, Any]) -> None:
     sections_dir.mkdir(parents=True, exist_ok=True)
     _clear_artifact_dir(sections_dir)
     section_payloads = _story_section_payloads(story)
-    list_sections = {"characters_artifact", "locations", "objects", "examples"}
+    list_sections = {"characters_artifact", "locations", "objects", "openings"}
     for section_name, section_payload in section_payloads.items():
         if section_name in list_sections:
             section_dir = sections_dir / section_name
@@ -350,8 +350,8 @@ def _load_story_sections(sections_dir: Path) -> dict[str, Any] | None:
         return None
 
     section_map: dict[str, Any] = {}
-    list_sections = {"characters_artifact", "locations", "objects", "examples"}
-    for section_name in ("overview", "plot", "characters_artifact", "locations", "objects", "opening", "examples"):
+    list_sections = {"characters_artifact", "locations", "objects", "openings"}
+    for section_name in ("overview", "plot", "setting", "style", "history", "characters_artifact", "locations", "objects", "openings"):
         if section_name in list_sections:
             section_dir = sections_dir / section_name
             if not section_dir.exists() or not section_dir.is_dir():
@@ -380,15 +380,15 @@ def _load_story_sections(sections_dir: Path) -> dict[str, Any] | None:
     story: dict[str, Any] = {}
     overview = section_map.get("overview")
     if isinstance(overview, dict):
-        for key in ("title", "description", "setting", "style", "tags"):
+        for key in ("title", "description", "tags"):
             if key in overview:
                 story[key] = overview.get(key)
-    for list_key in ("plot", "characters_artifact", "locations", "objects", "examples"):
+    for key in ("plot", "setting", "style", "history"):
+        if key in section_map:
+            story[key] = str(section_map.get(key) or "")
+    for list_key in ("characters_artifact", "locations", "objects", "openings"):
         if isinstance(section_map.get(list_key), list):
             story[list_key] = section_map[list_key]
-    opening = section_map.get("opening")
-    if isinstance(opening, dict):
-        story["opening"] = str(opening.get("opening") or "")
     return story if story else None
 
 

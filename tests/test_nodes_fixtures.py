@@ -54,6 +54,14 @@ def test_character_designer_uses_saved_real_output(monkeypatch) -> None:
     assert out["characters"][0]["details"] == expected
 
 
+def test_infer_character_name_removes_titles_and_quoted_nicknames() -> None:
+    details = '**Name:** Derek "Big Grocery" Thornton\n**Role:** Store manager'
+    assert infer_character_name(details, fallback="Character 1") == "Derek Thornton"
+
+    details = '**Name:** Kai "The Aisle Runner" Nakamura\n**Role:** Courier'
+    assert infer_character_name(details, fallback="Character 1") == "Kai Nakamura"
+
+
 def test_editor_node_offline_non_passed(monkeypatch) -> None:
     critique = _read_fixture("editor_critique.txt").replace("PASSED", "REJECTED")
 

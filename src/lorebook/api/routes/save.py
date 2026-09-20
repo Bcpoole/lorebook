@@ -93,15 +93,15 @@ def _save_story_sub_artifacts(
             partial_story = {
                 "title": name or str(story_artifact.get("title") or f"{artifact_type.title()} {index + 1}"),
                 "description": description or str(story_artifact.get("description") or ""),
-                "plot": [],
+                "plot": "",
                 "setting": str(story_artifact.get("setting") or ""),
                 "style": str(story_artifact.get("style") or ""),
+                "history": "",
                 "tags": _story_item_tags(entry),
                 "characters_artifact": [],
                 "locations": [entry] if section == "locations" else [],
                 "objects": [entry] if section == "objects" else [],
-                "opening": "",
-                "examples": [],
+                "openings": [],
             }
             save_run_result(
                 {

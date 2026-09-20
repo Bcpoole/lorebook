@@ -7,9 +7,14 @@ class StoryEntity(TypedDict):
     tags: NotRequired[List[str]]
 
 
-class StoryExample(TypedDict):
-    label: str
-    text: str
+class StoryOpeningMessage(TypedDict):
+    role: str
+    content: str
+
+
+class StoryOpening(TypedDict):
+    description: str
+    messages: List[StoryOpeningMessage]
 
 
 class StoryCharacterArtifact(TypedDict):
@@ -22,15 +27,15 @@ class StoryCharacterArtifact(TypedDict):
 class StoryArtifact(TypedDict):
     title: str
     description: str
-    plot: List[str]
+    plot: str
     setting: str
     style: str
+    history: str
     tags: List[str]
     characters_artifact: List[StoryCharacterArtifact]
     locations: List[StoryEntity]
     objects: List[StoryEntity]
-    opening: str
-    examples: List[StoryExample]
+    openings: List[StoryOpening]
 
 
 class CharacterState(TypedDict):

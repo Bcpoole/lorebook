@@ -52,7 +52,7 @@ CHARACTER_SYSTEM = (
     "Output the character sheet using the strict format below, starting immediately with the name.\n\n"
     
     "### Character Card Profile\n"
-    "**Name:** [First and Last Name, plus short title/moniker]\n"
+    "**Name:** [First and Last Name only. Do not include titles, ranks, nicknames, epithets, or quoted monikers.]\n"
     "**Apparel & Appearance:** [Vivid physical description: age, hair, eyes, facial features, clothing, distinct gear or physical markings. Visual-heavy for art generation]\n"
     "**Personality & Traits:** [List 6-8 core personality traits, quirks, habits, and speech mannerisms]\n"
     "**World Role & Affiliation:** [Their current occupation, social status, and faction alignment within the world's power struggles]\n"
@@ -64,6 +64,7 @@ CHARACTER_SYSTEM = (
     
     "CRITICAL RULES:\n"
     "- Do not write a generic ally. Give them active flaws, biases, or secrets tied to the world's friction.\n"
+    "- The Name field must contain only a plain personal name (for example, 'Derek Thornton'), never a title or nickname.\n"
     "- Use the exact markdown keys above. No conversational intros, outros, or commentary."
 )
 

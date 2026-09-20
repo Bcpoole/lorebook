@@ -14,7 +14,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
-from lorebook.characters import infer_character_name, should_replace_character_name
+from lorebook.characters import clean_character_name, infer_character_name, should_replace_character_name
 from lorebook.config.prompts import get_persona_prompts
 from lorebook.config.sd import DEFAULT_SD_STYLE, SD_STYLES, resolve_sd_styles
 from lorebook.api.storage import (
@@ -207,7 +207,7 @@ def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
         for entry in raw:
             if not isinstance(entry, dict):
                 continue
-            name = str(entry.get("name") or "").strip()
+            name = _clean_story_label(entry.get("name"))
             description = str(entry.get("description") or "").strip()
             summary = str(entry.get("summary") or "").strip()
             role = str(entry.get("role") or "").strip()
@@ -233,23 +233,52 @@ def _coerce_story_artifact(value: Any) -> StoryArtifact | None:
                 output.append(item)
         return output
 
+    def _as_openings(raw: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw, list):
+            return []
+        openings: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            messages: list[dict[str, str]] = []
+            raw_messages = entry.get("messages")
+            if isinstance(raw_messages, list):
+                for message in raw_messages:
+                    if not isinstance(message, dict):
+                        continue
+                    content = str(message.get("content") or "").strip()
+                    if content:
+                        messages.append(
+                            {
+                                "role": str(message.get("role") or "assistant").strip().lower(),
+                                "content": content,
+                            }
+                        )
+            openings.append(
+                {
+                    "description": str(entry.get("description") or "").strip(),
+                    "messages": messages,
+                }
+            )
+        return openings
+
     description = str(value.get("description") or "").strip()
     description_words = description.split()
     if len(description_words) > 128:
         description = " ".join(description_words[:128])
 
     artifact: StoryArtifact = {
-        "title": str(value.get("title") or "Untitled Story").strip(),
+        "title": _clean_story_label(value.get("title") or "Untitled Story"),
         "description": description,
-        "plot": _as_string_list(value.get("plot")),
+        "plot": str(value.get("plot") or "").strip(),
         "setting": str(value.get("setting") or "").strip(),
         "style": str(value.get("style") or "").strip(),
+        "history": str(value.get("history") or "").strip(),
         "tags": _as_string_list(value.get("tags")),
         "characters_artifact": _as_entity_list(value.get("characters_artifact")),
         "locations": _as_entity_list(value.get("locations")),
         "objects": _as_entity_list(value.get("objects")),
-        "opening": str(value.get("opening") or "").strip(),
-        "examples": _as_entity_list(value.get("examples")),
+        "openings": _as_openings(value.get("openings")),
     }
     return artifact
 
@@ -453,44 +482,182 @@ def _extract_first_json_block(text: str) -> dict[str, Any] | None:
     return None
 
 
-_STORY_SYSTEM_PROMPT = (
-    "You are a story architect. Return ONLY valid JSON with this schema: "
-    '{"title":"", "description":"", "plot":[""], "setting":"", "style":"", "tags":[""], '
-    '"characters_artifact":[{"name":"","role":"","summary":"","tags":[""]}], '
-    '"locations":[{"name":"","description":"","tags":[""]}], '
-    '"objects":[{"name":"","description":"","tags":[""]}], '
-    '"opening":"", "examples":[{"label":"","text":""}]}. '
-    "Use concise language. description must be 128 words max."
+_STORY_ORCHESTRATOR_SYSTEM = (
+    "You are the story-generation orchestrator. Turn the user's concept into a compact creative "
+    "brief for specialist writers. Return ONLY valid JSON with this schema: "
+    '{"description":"", "setting":"", "style":"", "tags":[""], "brief":""}. '
+    "description must be 128 words max; setting must be a rich 2-3 paragraph world description covering "
+    "place, atmosphere, relevant rules, and sensory details; brief must state the premise, conflict, stakes, and tone. "
+    "Do not write the title, plot, history, character entries, location entries, object entries, or openings."
+)
+
+_STORY_SECTION_SPECS: tuple[tuple[str, str, int], ...] = (
+    (
+        "title",
+        "You are the title specialist. Using the story brief, create one evocative, specific title. "
+        "Return only the title on one line; do not use JSON or markdown.",
+        80,
+    ),
+    (
+        "plot",
+        "You are the plot specialist. Using the story brief, write one cohesive plot or premise section. "
+        "Begin the response exactly with '# PLOT / PREMISE', then continue with the plot. Do not use JSON.",
+        280,
+    ),
+    (
+        "history",
+        "You are the story-history specialist. Summarize the important events immediately before the "
+        "story begins, emphasizing causes and unresolved consequences. Begin exactly with '# The Setting' "
+        "followed by '## What Came Before', then continue with concise prose or bullets. Do not use JSON. "
+        "Do not repeat the plot.",
+        220,
+    ),
+    (
+        "characters_artifact",
+        "You are the character specialist. Using the story brief, create 2-4 story-relevant characters. "
+        "For each character, use exactly these labeled lines, separated by a blank line:\n"
+        "Name: <name>\nRole: <role>\nSummary: <concise summary>\nTags: <comma-separated tags>\n"
+        "The Name value must be a plain personal name only: no ranks, titles, nicknames, quoted aliases, "
+        "parenthetical epithets, or descriptive monikers. Do not use JSON.",
+        320,
+    ),
+    (
+        "locations",
+        "You are the location specialist. Using the story brief, create 2-3 locations that matter to the plot. "
+        "For each location, use exactly these labeled lines, separated by a blank line:\n"
+        "Name: <name>\nDescription: <concise description>\nTags: <comma-separated tags>\n"
+        "Do not use JSON.",
+        280,
+    ),
+    (
+        "objects",
+        "You are the story-object specialist. Using the story brief, create 1-3 meaningful objects that "
+        "advance, complicate, or symbolize the story. For each object, use exactly these labeled lines, "
+        "separated by a blank line:\nName: <name>\nDescription: <concise description>\n"
+        "Tags: <comma-separated tags>\nDo not use JSON.",
+        240,
+    ),
+    (
+        "openings",
+        "You are the opening-scene specialist. Using the story brief, write a compelling, self-contained "
+        "opening of 2-4 paragraphs that establishes the protagonist, setting, and immediate tension. "
+        "Return only the prose; do not use JSON or markdown headings.",
+        360,
+    ),
 )
 
 
-def _story_is_full_quality(story: dict[str, Any]) -> bool:
-    """Return True only when the story has meaningful content in key narrative fields."""
-    return bool(
-        str(story.get("style") or "").strip()
-        and str(story.get("opening") or "").strip()
+def _story_prompt(
+    raw_idea: str,
+    story_setup: dict[str, Any] | None = None,
+    instruction: str = "",
+) -> str:
+    prompt = raw_idea
+    if story_setup and isinstance(story_setup, dict):
+        setup_lines = "\n".join(
+            f"- {k}: {v}" for k, v in story_setup.items() if str(v or "").strip()
+        )
+        if setup_lines:
+            prompt = f"{prompt}\n\nStory setup preferences:\n{setup_lines}"
+    if instruction:
+        prompt = f"{prompt}\n\nInstruction:\n{instruction}"
+    return prompt
+
+
+def _story_token_budget(configured_max_length: int, minimum: int) -> int:
+    """Keep each small specialist response viable when the global UI limit is tiny."""
+    return max(configured_max_length, minimum)
+
+
+def _story_artifact_from_sections(sections: dict[str, Any], persona_id: str) -> StoryArtifact:
+    overview = sections.get("overview") if isinstance(sections.get("overview"), dict) else {}
+    artifact = _coerce_story_artifact(
+        {
+            "title": (sections.get("title") or {}).get("title", ""),
+            "description": overview.get("description", ""),
+            "plot": (sections.get("plot") or {}).get("plot", ""),
+            "setting": overview.get("setting", ""),
+            "style": overview.get("style", "") or persona_id,
+            "history": (sections.get("history") or {}).get("history", ""),
+            "tags": overview.get("tags", []),
+            "characters_artifact": (sections.get("characters_artifact") or {}).get("characters_artifact", []),
+            "locations": (sections.get("locations") or {}).get("locations", []),
+            "objects": (sections.get("objects") or {}).get("objects", []),
+            "openings": (sections.get("openings") or {}).get("openings", []),
+        }
     )
+    if artifact is None:
+        raise HTTPException(status_code=500, detail="Failed to assemble story artifact")
+    return artifact
 
 
-def _try_recover_embedded_story(outer: dict[str, Any]) -> dict[str, Any] | None:
-    """Scan string field values in *outer* for a higher-quality embedded story JSON.
+def _clean_story_label(value: Any) -> str:
+    label = str(value or "").strip()
+    label = re.sub(r"^\s*(?:#{1,6}\s+|[-*]\s+)", "", label)
+    label = re.sub(r"^[*_`]+|[*_`]+$", "", label).strip()
+    return label
 
-    Some LLMs wrap the real story JSON inside a description or plot field.  If the
-    outer object fails the quality check, attempt to extract a better candidate from
-    its string values.
-    """
-    for value in outer.values():
-        if not isinstance(value, str) or len(value) < 20:
-            continue
-        candidate = _extract_first_json_block(value)
-        if candidate is None:
-            try:
-                candidate = json.loads(value)
-            except (json.JSONDecodeError, ValueError):
-                pass
-        if isinstance(candidate, dict) and _coerce_story_artifact(candidate) is not None:
-            if _story_is_full_quality(candidate):
-                return candidate
+
+def _parse_story_section(generated: str, key: str) -> dict[str, Any] | None:
+    loaded = _extract_first_json_block(generated)
+    if isinstance(loaded, dict):
+        if key == "overview":
+            return loaded if str(loaded.get("description") or "").strip() else None
+        value = loaded.get(key)
+        if key in {"title", "plot", "history"}:
+            cleaned = _clean_story_label(value) if key == "title" else str(value or "").strip()
+            return {key: cleaned} if cleaned else None
+        if isinstance(value, list):
+            return {key: value}
+
+    text = generated.strip()
+    if not text:
+        return None
+    if key == "title":
+        return {"title": _clean_story_label(text.splitlines()[0].strip().strip("\"'"))}
+    if key == "openings":
+        return {"openings": [{"description": "", "messages": [{"role": "assistant", "content": text}]}]}
+    if key == "plot":
+        return {"plot": text}
+    if key == "history":
+        return {"history": text}
+    if key in {"characters_artifact", "locations", "objects"}:
+        body_key = "summary" if key == "characters_artifact" else "description"
+        entries: list[dict[str, Any]] = []
+        for block in re.split(r"\n\s*\n", text):
+            fields: dict[str, str] = {}
+            current_key = ""
+            for line in block.splitlines():
+                match = re.match(r"^(Name|Role|Summary|Description|Tags):\s*(.*)$", line.strip(), re.IGNORECASE)
+                if match:
+                    current_key = match.group(1).lower()
+                    fields[current_key] = match.group(2).strip()
+                elif current_key and line.strip():
+                    fields[current_key] = f"{fields[current_key]} {line.strip()}".strip()
+            if not fields.get("name"):
+                continue
+            entry: dict[str, Any] = {
+                "name": _clean_story_label(fields["name"]),
+                body_key: fields.get(body_key, ""),
+                "tags": [tag.strip().lower() for tag in fields.get("tags", "").split(",") if tag.strip()],
+            }
+            if key == "characters_artifact":
+                entry["name"] = clean_character_name(entry["name"], fallback="Character")
+                entry["role"] = fields.get("role", "character")
+            entries.append(entry)
+        if entries:
+            return {key: entries}
+        if key == "characters_artifact":
+            return {
+                key: [
+                    {
+                        "name": "Character 1",
+                        "role": "character",
+                        "summary": text,
+                        "tags": [],
+                    }
+                ]
+            }
     return None
 
 
@@ -501,51 +668,42 @@ def _build_story_artifact(
     story_setup: dict[str, Any] | None = None,
     instruction: str = "",
 ) -> tuple[StoryArtifact, str]:
-    """Build a story artifact from *raw_idea*.
-
-    Returns a ``(artifact, generation_quality)`` tuple where ``generation_quality``
-    is ``"full"`` when the LLM returned parseable JSON, or ``"partial"`` when the
-    response fell back to plain-text extraction.
-    """
-    prompt = raw_idea
-    if story_setup and isinstance(story_setup, dict):
-        setup_lines = "\n".join(
-            f"- {k}: {v}" for k, v in story_setup.items() if str(v or "").strip()
-        )
-        if setup_lines:
-            prompt = f"{prompt}\n\nStory setup preferences:\n{setup_lines}"
-    if instruction:
-        prompt = f"{prompt}\n\nInstruction:\n{instruction}"
-
-    generated = call_local_llm(_STORY_SYSTEM_PROMPT, prompt, max_length=max_length)
-    loaded = _extract_first_json_block(generated)
+    """Generate a story through an orchestrator and small, independently parseable specialists."""
+    prompt = _story_prompt(raw_idea, story_setup, instruction)
+    sections: dict[str, Any] = {}
     quality = "full"
-    if loaded is not None and not _story_is_full_quality(loaded):
-        recovered = _try_recover_embedded_story(loaded)
-        if recovered is not None:
-            loaded = recovered
-    if loaded is None:
-        quality = "partial"
-        loaded = {
-            "title": raw_idea[:80] or "Untitled Story",
-            "description": generated[:800],
-            "plot": [generated[:220]],
-            "setting": "",
-            "style": "neutral",
-            "tags": [],
-            "characters_artifact": [],
-            "locations": [],
-            "objects": [],
-            "opening": "",
-            "examples": [],
-        }
 
-    artifact = _coerce_story_artifact(loaded)
-    if artifact is None:
-        raise HTTPException(status_code=500, detail="Failed to parse generated story artifact")
-    if not artifact["style"]:
-        artifact["style"] = persona_id
-    return artifact, quality
+    overview_raw = call_local_llm(
+        _STORY_ORCHESTRATOR_SYSTEM,
+        prompt,
+        max_length=_story_token_budget(max_length, 220),
+    )
+    overview = _parse_story_section(overview_raw, "overview")
+    if overview is None:
+        quality = "partial"
+        overview = {
+            "description": overview_raw[:800],
+            "setting": "",
+            "style": persona_id,
+            "tags": [],
+            "brief": raw_idea,
+        }
+    sections["overview"] = overview
+    specialist_context = f"{prompt}\n\nOrchestrator brief:\n{overview.get('brief') or overview.get('description')}"
+
+    for key, system_prompt, minimum_tokens in _STORY_SECTION_SPECS:
+        generated = call_local_llm(
+            system_prompt,
+            specialist_context,
+            max_length=_story_token_budget(max_length, minimum_tokens),
+        )
+        parsed = _parse_story_section(generated, key)
+        if parsed is None:
+            quality = "partial"
+            parsed = {key: "" if key in {"title", "plot", "history"} else []}
+        sections[key] = parsed
+
+    return _story_artifact_from_sections(sections, persona_id), quality
 
 
 def _build_story_action(
@@ -565,7 +723,11 @@ def _build_story_action(
         f"{raw_idea}\n\nCurrent context JSON:\n{json.dumps(existing_story, ensure_ascii=False)}"
         f"\n\nAction: {action}"
     )
-    generated = call_local_llm(_STORY_SYSTEM_PROMPT, prompt, max_length=max_length)
+    generated = call_local_llm(
+        "You are a story editor. Return ONLY valid JSON that preserves the supplied story schema and applies the requested action.",
+        prompt,
+        max_length=_story_token_budget(max_length, 360),
+    )
     loaded = _extract_first_json_block(generated)
     if loaded is None:
         artifact = _coerce_story_artifact(existing_story)
@@ -578,6 +740,132 @@ def _build_story_action(
     if not artifact["style"]:
         artifact["style"] = persona_id
     return artifact, "full"
+
+
+async def _story_event_generator(
+    raw_idea: str,
+    request: Request,
+    persona_id: str,
+    max_length: int,
+    story_setup: dict[str, Any] | None,
+    instruction: str,
+    save_pending: bool,
+) -> AsyncIterator[Dict[str, str]]:
+    """Stream orchestrator and specialist output while publishing assembled Story snapshots."""
+    prompt = _story_prompt(raw_idea, story_setup, instruction)
+    sections: dict[str, Any] = {}
+    quality = "full"
+
+    async def generate_section(
+        key: str,
+        system_prompt: str,
+        user_prompt: str,
+        minimum_tokens: int,
+    ) -> AsyncIterator[Dict[str, str]]:
+        if await request.is_disconnected():
+            return
+        token_budget = _story_token_budget(max_length, minimum_tokens)
+        yield {"event": "story-stage-start", "data": json.dumps({"section": key, "token_budget": token_budget})}
+        generated = ""
+        try:
+            for chunk in stream_local_llm(system_prompt, user_prompt, max_length=token_budget):
+                if await request.is_disconnected():
+                    return
+                generated += chunk
+        except RuntimeError as exc:
+            yield {"event": "story-error", "data": json.dumps({"section": key, "detail": str(exc)})}
+            return
+        yield {"event": "story-stage-raw", "data": generated}
+
+    overview_raw = ""
+    async for event in generate_section("overview", _STORY_ORCHESTRATOR_SYSTEM, prompt, 220):
+        if event["event"] == "story-stage-raw":
+            overview_raw = event["data"]
+        else:
+            yield event
+    if not overview_raw:
+        yield {
+            "event": "story-error",
+            "data": json.dumps({"section": "overview", "detail": "The story orchestrator returned no output."}),
+        }
+        return
+    overview = _parse_story_section(overview_raw, "overview")
+    if overview is None:
+        quality = "partial"
+        overview = {
+            "description": overview_raw[:800],
+            "setting": "",
+            "style": persona_id,
+            "tags": [],
+            "brief": raw_idea,
+        }
+    sections["overview"] = overview
+    yield {
+        "event": "story-section-complete",
+        "data": json.dumps({"section": "overview", "output": overview, "story_artifact": _story_artifact_from_sections(sections, persona_id)}),
+    }
+
+    specialist_context = f"{prompt}\n\nOrchestrator brief:\n{overview.get('brief') or overview.get('description')}"
+    for key, system_prompt, minimum_tokens in _STORY_SECTION_SPECS:
+        generated = ""
+        async for event in generate_section(key, system_prompt, specialist_context, minimum_tokens):
+            if event["event"] == "story-stage-raw":
+                generated = event["data"]
+            else:
+                yield event
+        if not generated:
+            yield {
+                "event": "story-error",
+                "data": json.dumps({"section": key, "detail": f"The {key} specialist returned no output."}),
+            }
+            return
+        parsed = _parse_story_section(generated, key)
+        if parsed is None:
+            quality = "partial"
+            parsed = {key: "" if key in {"title", "plot", "history"} else []}
+        sections[key] = parsed
+        yield {
+            "event": "story-section-complete",
+            "data": json.dumps(
+                {
+                    "section": key,
+                    "output": parsed,
+                    "story_artifact": _story_artifact_from_sections(sections, persona_id),
+                }
+            ),
+        }
+
+    artifact = _story_artifact_from_sections(sections, persona_id)
+    state = _normalize_state(raw_idea, None)
+    state["story_artifact"] = artifact
+    if story_setup is not None:
+        state["story_setup"] = story_setup
+    if instruction:
+        state["story_instruction"] = instruction
+    save_draft_state(
+        {
+            "raw_idea": raw_idea,
+            "state": state,
+            "generation_quality": quality,
+            "meta": {"mode": "story", "streaming": True},
+            "save_pending": save_pending,
+        },
+        "latest",
+        artifact_type="story",
+    )
+    yield {
+        "event": "story-complete",
+        "data": json.dumps(
+            {
+                "state": state,
+                "story_artifact": artifact,
+                "generation_quality": quality,
+                "story_setup": story_setup,
+                "story_instruction": instruction,
+            }
+        ),
+    }
+    yield {"event": "done", "data": "{}"}
 
 
 def _story_item_sd_prompt(
@@ -1140,7 +1428,34 @@ async def generate_story_artifact(body: Dict[str, Any]) -> Dict[str, Any]:
     return response
 
 
-_STORY_ITEM_SECTIONS = frozenset({"characters_artifact", "locations", "objects", "examples", "plot"})
+@router.post("/story/stream")
+async def stream_story_artifact(body: Dict[str, Any], request: Request) -> EventSourceResponse:
+    raw_idea = str(body.get("raw_idea") or "").strip()
+    if not raw_idea:
+        raise HTTPException(status_code=400, detail="raw_idea is required")
+
+    experimentation_config = body.get("experimentation_config", {})
+    if not isinstance(experimentation_config, dict):
+        raise HTTPException(status_code=400, detail="experimentation_config must be an object")
+
+    story_setup = body.get("story_setup")
+    if story_setup is not None and not isinstance(story_setup, dict):
+        raise HTTPException(status_code=400, detail="story_setup must be an object")
+
+    return EventSourceResponse(
+        _story_event_generator(
+            raw_idea=raw_idea,
+            request=request,
+            persona_id=str(body.get("persona_id") or "blank"),
+            max_length=int(experimentation_config.get("maxLength", 1200)),
+            story_setup=story_setup,
+            instruction=str(body.get("instruction") or "").strip(),
+            save_pending=bool(body.get("save_pending", False)),
+        )
+    )
+
+
+_STORY_ITEM_SECTIONS = frozenset({"characters_artifact", "locations", "objects"})
 
 
 @router.post("/story-item")

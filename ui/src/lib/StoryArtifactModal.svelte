@@ -47,14 +47,38 @@
       </div>
     {/if}
 
-    {#if storyArtifact.plot && Array.isArray(storyArtifact.plot) && storyArtifact.plot.length > 0}
+    {#if storyArtifact.style}
+      <div class="story-section">
+        <h3>Style</h3>
+        <p>{storyArtifact.style}</p>
+      </div>
+    {/if}
+
+    {#if storyArtifact.plot}
       <div class="story-section">
         <h3>Plot</h3>
-        <ol class="plot-list">
-          {#each storyArtifact.plot as point}
-            <li>{point}</li>
-          {/each}
-        </ol>
+        <p class="preserve-lines">{storyArtifact.plot}</p>
+      </div>
+    {/if}
+
+    {#if storyArtifact.history}
+      <div class="story-section">
+        <h3>History</h3>
+        <p class="preserve-lines">{storyArtifact.history}</p>
+      </div>
+    {/if}
+
+    {#if Array.isArray(storyArtifact.openings) && storyArtifact.openings.length > 0}
+      <div class="story-section">
+        <h3>Openings</h3>
+        {#each storyArtifact.openings as opening, index}
+          <div class="opening">
+            {#if opening.description}<p><strong>Opening {index + 1}:</strong> {opening.description}</p>{/if}
+            {#each opening.messages ?? [] as message}
+              <p class="preserve-lines"><strong>{message.role || 'assistant'}:</strong> {message.content}</p>
+            {/each}
+          </div>
+        {/each}
       </div>
     {/if}
 
@@ -180,6 +204,8 @@
   .modal-close:hover {
     opacity: 1;
   }
+  .preserve-lines { white-space: pre-wrap; }
+  .opening { border-left: 2px solid #475569; padding-left: 0.75rem; margin-top: 0.65rem; }
 
   .story-content {
     display: grid;
@@ -225,16 +251,6 @@
     color: #cbd5e1;
     line-height: 1.6;
     margin: 0;
-  }
-
-  .plot-list {
-    margin: 0;
-    padding-left: 1.5rem;
-    color: #cbd5e1;
-  }
-
-  .plot-list li {
-    margin-bottom: 0.5rem;
   }
 
   .expandable .section-toggle {

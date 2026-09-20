@@ -115,7 +115,8 @@ Set-Location ..
 ## API Endpoints
 
 - `POST /api/run` - blocking workflow run, saves JSON output to `outputs/world/`
-- `POST /api/story` - generate or refine structured Story artifacts with setup/instruction/action controls (`generate`, `suggest_next_beat`, `rewrite_opening`, `add_character`, `add_location`, `add_object`, `add_example`)
+- `POST /api/story` - generate or refine structured Story artifacts with setup/instruction/action controls (`generate`, `suggest_next_beat`, `rewrite_opening`, `add_character`, `add_location`, `add_object`)
+- `POST /api/story/stream` - SSE stream for initial Story generation; reports each orchestrator/specialist stage and progressively publishes completed Story sections (raw model JSON remains internal)
 - `POST /api/story-item` - edit/delete individual story list items (`characters_artifact`, `locations`, `objects`, `examples`) and generate SD prompts/images for each item
 - `POST /api/character` - generate one standalone character payload
 - `POST /api/save` - save a run with optional story sub-artifact extraction
@@ -130,7 +131,9 @@ Set-Location ..
 - `PATCH /api/story/{id}/update-location` - update story location and auto-create independent artifact
 - `PATCH /api/story/{id}/update-object` - update story object and auto-create independent artifact
 
-`POST /api/story` accepts optional `story_setup` (`protagonist`, `opening_preference`, `output_format`, `tone`, `length_target`), `instruction`, `action`, and current `state.story_artifact` for refinement passes. The response includes `generation_quality` (`full`, `repaired`, `fallback`) for UI diagnostics.
+Initial Story generation uses a compact orchestrator brief followed by independent Title, Plot, History, Characters, Locations, Objects, and Openings specialists. Each specialist has a safe output-token floor, so an overly small configured `maxLength` cannot truncate the full artifact generation. The Story UI renders completed sections progressively while retaining JSON only as the API and persistence format; direct module edits are debounced into the Story draft cache. `POST /api/story` accepts optional `story_setup` (`protagonist`, `opening_preference`, `output_format`, `tone`, `length_target`), `instruction`, `action`, and current `state.story_artifact` for refinement passes. The response includes `generation_quality` (`full`, `partial`, or `fallback`) for UI diagnostics.
+
+Story artifacts store Plot, Setting, Style, and History as independent text sections. `openings` is a list of optional chooser descriptions and role-based messages. Examples are not part of the Story schema.
 
 Story draft internals are also split into per-section JSON files under `outputs/story/_drafts/<draft>_story_sections/`. List sections are persisted per-item (for example `objects/silver_keycard.json`) to keep section-focused updates resilient. Item image files are co-located with those item JSON files, and item JSON stores `image_name` (filename only).
 
