@@ -318,7 +318,7 @@ def test_llm_health_endpoint_reports_connectivity(monkeypatch) -> None:
     monkeypatch.setattr(run_routes, "is_local_llm_available", lambda: False)
 
     client = TestClient(create_app())
-    res = client.get("/api/llm-health")
+    res = client.get("/api/health/llm")
 
     assert res.status_code == 200
     assert res.json() == {"connected": False}

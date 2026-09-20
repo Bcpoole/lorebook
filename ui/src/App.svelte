@@ -607,7 +607,7 @@
     if (heartbeatInFlight) return llmConnected
     heartbeatInFlight = true
     try {
-      const res = await fetch('/api/llm-health', { cache: 'no-store' })
+      const res = await fetch('/api/health/llm', { cache: 'no-store' })
       let nextConnected = false
 
       if (res.ok) {

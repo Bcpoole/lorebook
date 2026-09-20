@@ -15,6 +15,11 @@
       "use_colors": null
     }
   },
+  "filters": {
+    "health_check_filter": {
+      "()": "lorebook.logging_filters.HealthCheckAccessFilter"
+    }
+  },
   "handlers": {
     "default": {
       "formatter": "default",
@@ -41,6 +46,7 @@
     "uvicorn.access": {
       "handlers": ["access"],
       "level": "INFO",
+      "filters": ["health_check_filter"],
       "propagate": false
     }
   }

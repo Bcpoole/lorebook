@@ -151,12 +151,12 @@ describe('App stop-generation flow', () => {
         return jsonResponse({})
       }
 
-      if (url.includes('/api/health')) {
-        return jsonResponse({}, true)
+      if (url.includes('/api/health/llm')) {
+        return jsonResponse({ connected: true })
       }
 
-      if (url.includes('/api/llm-health')) {
-        return jsonResponse({ connected: true })
+      if (url.includes('/api/health')) {
+        return jsonResponse({}, true)
       }
 
       if (url.includes('/api/draft')) {

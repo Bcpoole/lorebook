@@ -1313,17 +1313,17 @@ async def restore_latest() -> Dict[str, Any]:
     }
 
 
-@router.get("/llm-health")
-async def llm_health() -> Dict[str, Any]:
-    return {
-        "connected": is_local_llm_available(),
-    }
-
-
 @router.get("/health")
 async def app_health() -> Dict[str, Any]:
     return {
         "status": "ok",
+    }
+
+
+@router.get("/health/llm")
+async def llm_health() -> Dict[str, Any]:
+    return {
+        "connected": is_local_llm_available(),
     }
 
 
