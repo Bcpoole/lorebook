@@ -34,8 +34,9 @@ if (-not $npmCmd) {
 
 $api = $null
 $vite = $null
+$healthUri = 'http://127.0.0.1:8000/api/health'
 
-Write-Host "Starting FastAPI on http://localhost:8000 ..."
+Write-Host "Starting FastAPI on http://127.0.0.1:8000 ..."
 try {
   $apiArgs = @(
     $pythonArgsPrefix
@@ -46,6 +47,39 @@ try {
     -WorkingDirectory $root
 } catch {
   Write-Error "Failed to start FastAPI: $($_.Exception.Message)"
+}
+
+if (-not $api -or $api.HasExited) {
+  Write-Error "FastAPI stopped before it became ready."
+  if ($api -and -not $api.HasExited) {
+    Stop-Process -Id $api.Id -ErrorAction SilentlyContinue
+  }
+  exit 1
+}
+
+Write-Host "Waiting for FastAPI to become ready ..."
+$apiReady = $false
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+  if ($api.HasExited) {
+    break
+  }
+  try {
+    $health = Invoke-WebRequest -Uri $healthUri -UseBasicParsing -TimeoutSec 1
+    if ($health.StatusCode -eq 200) {
+      $apiReady = $true
+      break
+    }
+  } catch {
+    Start-Sleep -Milliseconds 250
+  }
+}
+
+if (-not $apiReady) {
+  Write-Error "FastAPI did not become ready at $healthUri."
+  if ($api -and -not $api.HasExited) {
+    Stop-Process -Id $api.Id -ErrorAction SilentlyContinue
+  }
+  exit 1
 }
 
 Write-Host "Starting Vite on http://localhost:5173 ..."
