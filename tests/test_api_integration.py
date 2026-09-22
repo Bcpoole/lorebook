@@ -428,6 +428,141 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
     assert payload["generation_quality"] == "full"
 
 
+def test_page_agent_returns_validated_component_proposals(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "reply": "I tightened the premise and left the rest untouched.",
+                "changes": [
+                    {"field": "description", "label": "Summary", "value": "A sharper premise."},
+                    {"field": "unknown", "label": "Hidden", "value": "not allowed"},
+                    {"field": "tags", "label": "Tags", "value": "wrong type"},
+                ],
+            }
+        ),
+    )
+
+    response = TestClient(create_app()).post(
+        "/api/agent/chat",
+        json={
+            "page": "story",
+            "message": "Make the premise tighter.",
+            "persona_id": "blank",
+            "context": {
+                "raw_idea": "A city in the clouds",
+                "editable": {
+                    "description": "A loose premise.",
+                    "tags": ["sky"],
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reply"].startswith("I tightened")
+    assert payload["changes"] == [
+        {
+            "field": "description",
+            "label": "Summary",
+            "before": "A loose premise.",
+            "after": "A sharper premise.",
+        }
+    ]
+
+
+def test_page_agent_expands_single_entity_into_array_component(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "call_local_llm",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "reply": "I expanded Tom while preserving the other characters.",
+                "changes": [
+                    {
+                        "field": "characters_artifact",
+                        "label": "Tom Morrison",
+                        "value": {
+                            "name": "Tom Morrison",
+                            "summary": "An earnest beginner obsessed with Muay Thai.",
+                            "tags": ["enthusiastic", "beginner"],
+                        },
+                    }
+                ],
+            }
+        ),
+    )
+    original_characters = [
+        {"name": "Tom Morrison", "summary": "A beginner.", "tags": ["beginner"]},
+        {"name": "Mae Chen", "summary": "The reigning champion.", "tags": ["champion"]},
+    ]
+
+    response = TestClient(create_app()).post(
+        "/api/agent/chat",
+        json={
+            "page": "story",
+            "message": "Make Tom more enthusiastic about Muay Thai.",
+            "context": {"editable": {"characters_artifact": original_characters}},
+        },
+    )
+
+    assert response.status_code == 200
+    changes = response.json()["changes"]
+    assert len(changes) == 1
+    assert changes[0]["entity_index"] == 0
+    assert changes[0]["entity_name"] == "Tom Morrison"
+    assert changes[0]["before"] == original_characters[0]
+    assert changes[0]["after"]["summary"].startswith("An earnest beginner")
+
+
+def test_page_agent_rejects_invalid_model_response(monkeypatch) -> None:
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "not json")
+    response = TestClient(create_app()).post(
+        "/api/agent/chat",
+        json={
+            "page": "world",
+            "message": "What should I improve?",
+            "context": {"editable": {"world_setting": "Current world"}},
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "The page agent returned an invalid response"
+
+
+def test_story_persona_layer_preserves_task_contract(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from lorebook.api.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes,
+        "get_persona_prompts",
+        lambda persona_id: SimpleNamespace(
+            LOREMASTER_SYSTEM="Favor dreamlike imagery.",
+            CHARACTER_SYSTEM="Make characters morally conflicted.",
+            EDITOR_SYSTEM="Prefer spare, tense prose.",
+        ),
+    )
+
+    layered = run_routes._persona_layered_system_prompt(
+        "Return ONLY valid JSON.", "dreamer", "loremaster"
+    )
+
+    assert layered.startswith("Return ONLY valid JSON.")
+    assert "task instructions and output format above take precedence" in layered
+    assert "Favor dreamlike imagery." in layered
+    assert run_routes._persona_layered_system_prompt("Base", "blank", "loremaster") == "Base"
+
+
 def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
     from lorebook.api.routes import run as run_routes
 
@@ -1089,6 +1224,50 @@ def test_story_save_creates_location_and_object_artifacts() -> None:
     object_gallery = client.get("/api/gallery", params={"artifact_type": "object"})
     assert object_gallery.status_code == 200
     assert any(item["title"] == "Aether Compass" for item in object_gallery.json()["items"])
+
+
+def test_story_save_uses_title_for_new_id_and_overwrites_named_run(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from lorebook.api.routes import save as save_routes
+
+    monkeypatch.setattr(save_routes, "uuid4", lambda: SimpleNamespace(hex="abc123"))
+    client = TestClient(create_app())
+    story = {
+        "title": "Tom Morrison Enters the Neighborhood Tournament!",
+        "description": "First version.",
+        "characters_artifact": [],
+        "locations": [],
+        "objects": [],
+        "openings": [],
+    }
+    first = client.post(
+        "/api/save",
+        json={
+            "raw_idea": "A local tournament",
+            "state": {"story_artifact": story},
+            "meta": {"source": "story"},
+        },
+    )
+
+    assert first.status_code == 200
+    run_id = first.json()["run_id"]
+    assert run_id == "tom-morrison-enters-the-neighborhood-tou-abc123"
+
+    updated_story = {**story, "description": "Updated version."}
+    second = client.post(
+        "/api/save",
+        json={
+            "raw_idea": "A local tournament",
+            "state": {"story_artifact": updated_story},
+            "meta": {"source": "story"},
+            "filename": run_id,
+        },
+    )
+
+    assert second.status_code == 200
+    assert second.json()["run_id"] == run_id
+    assert storage.load_run(run_id, artifact_type="story")["state"]["story_artifact"]["description"] == "Updated version."
 
 
 def test_character_lookup_by_urn_resolves_name_and_relationships() -> None:

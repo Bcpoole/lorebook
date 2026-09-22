@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
 
   import MarkdownBlock from './MarkdownBlock.svelte'
+  import AgentReviewControls from './AgentReviewControls.svelte'
   import StoryOpeningsModule from './StoryOpeningsModule.svelte'
   import StorySectionModule from './StorySectionModule.svelte'
 
@@ -77,6 +78,9 @@
     storySetup = $bindable(defaultStorySetup()),
     storyInstruction = $bindable(''),
     generationQuality = $bindable(''),
+    agentReviews = [],
+    onagentreview = () => {},
+    onagentsaved = () => {},
   } = $props()
 
   let activeAbortController = $state(null)
@@ -84,6 +88,8 @@
   let generationProgress = $state({ activeSection: '', completedSections: [], error: '' })
   let draftSaveTimer = null
   let draftSaveState = $state('saved')
+  let lastSavedSignature = $state('')
+  let savingStory = $state(false)
   let itemActionKey = $state('')
   let editingItemKey = $state('')
   let editingItemDraft = $state(null)
@@ -93,6 +99,17 @@
   let overviewDraft = $state({ title: '', description: '', tagsText: '' })
   let openingDraft = $state('')
   let plotDraft = $state([])
+  let storyDirty = $derived(Boolean(story) && storySignature() !== lastSavedSignature)
+
+  function storySignature() {
+    if (!story) return ''
+    return JSON.stringify({
+      rawIdea,
+      story,
+      storySetup,
+      storyInstruction,
+    })
+  }
 
   /** Detect if a value is a raw JSON dump (backend parse failure) rather than human-readable text. */
   function looksLikeJson(value) {
@@ -107,6 +124,19 @@
 
   function itemKey(section, index) {
     return `${section}:${index}`
+  }
+
+  function agentFieldReview(field) {
+    return agentReviews.find((review) => review.field === field && !Number.isInteger(review.entity_index))
+  }
+
+  function agentFieldValue(field) {
+    const review = agentFieldReview(field)
+    return review?.view === 'old' ? review.before : story?.[field]
+  }
+
+  function handleAgentReview(event) {
+    onagentreview({ page: 'story', ...event })
   }
 
   function mergeStoryArtifactPreservingImages(previousStory, nextStory) {
@@ -426,15 +456,18 @@
 
   async function generateStory(action = 'generate') {
     if (!rawIdea.trim() || loading || !llmConnected) return
+    const isInitialGeneration = action === 'generate' && !story
     const generationId = ++activeGenerationId
     const controller = new AbortController()
     activeAbortController = controller
     loading = true
     error = ''
-    savedName = ''
+    if (isInitialGeneration) {
+      savedName = ''
+      lastSavedSignature = ''
+    }
     generationProgress = { activeSection: '', completedSections: [], error: '' }
     try {
-      const isInitialGeneration = action === 'generate' && !story
       const res = await fetch(isInitialGeneration ? '/api/story/stream' : '/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -536,23 +569,38 @@
     }
   }
 
-  async function saveStory() {
-    if (!story) return
-    const res = await fetch('/api/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+  async function saveStory(asCopy = false) {
+    if (!story || savingStory || (!asCopy && !storyDirty)) return
+    savingStory = true
+    error = ''
+    try {
+      const body = {
         raw_idea: rawIdea,
         state: { story_artifact: story, story_setup: storySetup, story_instruction: storyInstruction, characters: [] },
         meta: { source: 'story', story_generation_quality: generationQuality },
-      }),
-    })
-    if (!res.ok) {
+      }
+      if (!asCopy && savedName) {
+        body.filename = savedName
+      }
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        error = payload?.detail || 'Failed to save story.'
+        return
+      }
+      const payload = await res.json()
+      savedName = payload.filename
+      lastSavedSignature = storySignature()
+      onagentsaved({ page: 'story' })
+    } catch {
       error = 'Failed to save story.'
-      return
+    } finally {
+      savingStory = false
     }
-    const payload = await res.json()
-    savedName = payload.filename
   }
 
   function handleResetStoryPage() {
@@ -566,6 +614,7 @@
     error = ''
     story = null
     savedName = ''
+    lastSavedSignature = ''
     generationQuality = ''
     generationProgress = { activeSection: '', completedSections: [], error: '' }
     storySetup = defaultStorySetup()
@@ -626,7 +675,10 @@
         Generate Story
       {/if}
     </button>
-    <button class="secondary" onclick={saveStory} disabled={!story || loading}>Save</button>
+    <button class="secondary" onclick={() => saveStory(false)} disabled={!story || loading || savingStory || !storyDirty}>
+      {savingStory ? 'Saving…' : 'Save'}
+    </button>
+    <button class="secondary" onclick={() => saveStory(true)} disabled={!story || loading || savingStory}>Save as Copy</button>
   </div>
 
   {#if error}<p class="error">{error}</p>{/if}
@@ -671,23 +723,34 @@
       <section class="story-module overview-module">
         <header>
           <h3>Story overview</h3>
-          <span class="draft-status">{draftSaveState === 'saving' ? 'Saving…' : draftSaveState === 'error' ? 'Save failed' : 'Saved to draft'}</span>
+          <span class="draft-status">
+            {agentReviews.length
+              ? `${agentReviews.length} agent edit${agentReviews.length === 1 ? '' : 's'} staged`
+              : draftSaveState === 'saving'
+                ? 'Saving…'
+                : draftSaveState === 'error'
+                  ? 'Save failed'
+                  : 'Saved to draft'}
+          </span>
         </header>
+        <AgentReviewControls review={agentFieldReview('title')} onreview={handleAgentReview} />
         <label class="module-field">
           <span>Title</span>
-          <input type="text" value={story.title ?? ''} placeholder="Story title" aria-label="Story title" oninput={(event) => updateStoryField('title', event.currentTarget.value)} disabled={loading} />
+          <input type="text" value={agentFieldValue('title') ?? ''} placeholder="Story title" aria-label="Story title" oninput={(event) => updateStoryField('title', event.currentTarget.value)} disabled={loading || agentFieldReview('title')?.view === 'old'} />
         </label>
+        <AgentReviewControls review={agentFieldReview('description')} onreview={handleAgentReview} />
         <label class="module-field">
           <span>Summary</span>
-          <textarea rows="3" value={story.description ?? ''} placeholder="A concise overview of the scenario" aria-label="Story summary" oninput={(event) => updateStoryField('description', event.currentTarget.value)} disabled={loading}></textarea>
+          <textarea rows="3" value={agentFieldValue('description') ?? ''} placeholder="A concise overview of the scenario" aria-label="Story summary" oninput={(event) => updateStoryField('description', event.currentTarget.value)} disabled={loading || agentFieldReview('description')?.view === 'old'}></textarea>
         </label>
+        <AgentReviewControls review={agentFieldReview('tags')} onreview={handleAgentReview} />
         <div class="module-field">
           <span>Tags</span>
           <div class="tag-editor">
-            {#each story.tags ?? [] as tag}
-              <button type="button" class="tag-badge" onclick={() => removeStoryTag(tag)} disabled={loading} title={`Remove ${tag}`}>{tag} ×</button>
+            {#each agentFieldValue('tags') ?? [] as tag}
+              <button type="button" class="tag-badge" onclick={() => removeStoryTag(tag)} disabled={loading || agentFieldReview('tags')?.view === 'old'} title={`Remove ${tag}`}>{tag} ×</button>
             {/each}
-            <input type="text" placeholder="Add tag and press Enter" aria-label="Add story tag" onkeydown={handleTagKeydown} disabled={loading} />
+            <input type="text" placeholder="Add tag and press Enter" aria-label="Add story tag" onkeydown={handleTagKeydown} disabled={loading || agentFieldReview('tags')?.view === 'old'} />
           </div>
         </div>
       </section>
@@ -697,7 +760,8 @@
           <h3>Plot</h3>
           <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.plot} aria-label={STORY_FIELD_TOOLTIPS.plot}>?</span>
         </header>
-        <textarea rows="7" value={story.plot ?? ''} placeholder="Describe the premise and main events..." aria-label="Story plot" oninput={(event) => updateStoryField('plot', event.currentTarget.value)} disabled={loading}></textarea>
+        <AgentReviewControls review={agentFieldReview('plot')} onreview={handleAgentReview} />
+        <textarea rows="7" value={agentFieldValue('plot') ?? ''} placeholder="Describe the premise and main events..." aria-label="Story plot" oninput={(event) => updateStoryField('plot', event.currentTarget.value)} disabled={loading || agentFieldReview('plot')?.view === 'old'}></textarea>
         <div class="module-actions">
           <button class="ghost small" type="button" onclick={() => generateStory('suggest_next_beat')} disabled={loading || !llmConnected}>Expand plot</button>
         </div>
@@ -708,7 +772,8 @@
           <h3>Setting</h3>
           <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.setting} aria-label={STORY_FIELD_TOOLTIPS.setting}>?</span>
         </header>
-        <textarea rows="5" value={story.setting ?? ''} placeholder="Describe the world, time, place, and atmosphere..." aria-label="Story setting" oninput={(event) => updateStoryField('setting', event.currentTarget.value)} disabled={loading}></textarea>
+        <AgentReviewControls review={agentFieldReview('setting')} onreview={handleAgentReview} />
+        <textarea rows="5" value={agentFieldValue('setting') ?? ''} placeholder="Describe the world, time, place, and atmosphere..." aria-label="Story setting" oninput={(event) => updateStoryField('setting', event.currentTarget.value)} disabled={loading || agentFieldReview('setting')?.view === 'old'}></textarea>
       </section>
 
       <section class="story-module">
@@ -716,7 +781,8 @@
           <h3>Style</h3>
           <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.style} aria-label={STORY_FIELD_TOOLTIPS.style}>?</span>
         </header>
-        <textarea rows="4" value={story.style ?? ''} placeholder="Describe viewpoint, tone, pacing, and prose style..." aria-label="Story style" oninput={(event) => updateStoryField('style', event.currentTarget.value)} disabled={loading}></textarea>
+        <AgentReviewControls review={agentFieldReview('style')} onreview={handleAgentReview} />
+        <textarea rows="4" value={agentFieldValue('style') ?? ''} placeholder="Describe viewpoint, tone, pacing, and prose style..." aria-label="Story style" oninput={(event) => updateStoryField('style', event.currentTarget.value)} disabled={loading || agentFieldReview('style')?.view === 'old'}></textarea>
       </section>
 
       <section class="story-module">
@@ -724,7 +790,8 @@
           <h3>History</h3>
           <span class="module-tooltip" title={STORY_FIELD_TOOLTIPS.history} aria-label={STORY_FIELD_TOOLTIPS.history}>?</span>
         </header>
-        <textarea rows="5" value={story.history ?? ''} placeholder="Summarize the events leading into this story..." aria-label="Story history" oninput={(event) => updateStoryField('history', event.currentTarget.value)} disabled={loading}></textarea>
+        <AgentReviewControls review={agentFieldReview('history')} onreview={handleAgentReview} />
+        <textarea rows="5" value={agentFieldValue('history') ?? ''} placeholder="Summarize the events leading into this story..." aria-label="Story history" oninput={(event) => updateStoryField('history', event.currentTarget.value)} disabled={loading || agentFieldReview('history')?.view === 'old'}></textarea>
       </section>
 
       <StorySectionModule
@@ -735,10 +802,12 @@
         extraKey="tags"
         tooltip={STORY_FIELD_TOOLTIPS.characters}
         disabled={loading}
+        agentReviews={agentReviews.filter((review) => review.field === 'characters_artifact')}
         onupdate={(index, item) => updateStoryModuleItem('characters_artifact', index, item)}
         onadd={() => addStoryModuleItem('characters_artifact')}
         onremove={(index) => removeStoryModuleItem('characters_artifact', index)}
         onimage={(index) => generateItemImage('characters_artifact', index)}
+        onagentreview={handleAgentReview}
       />
       <StorySectionModule
         title="Locations"
@@ -747,10 +816,12 @@
         extraKey="tags"
         tooltip={STORY_FIELD_TOOLTIPS.locations}
         disabled={loading}
+        agentReviews={agentReviews.filter((review) => review.field === 'locations')}
         onupdate={(index, item) => updateStoryModuleItem('locations', index, item)}
         onadd={() => addStoryModuleItem('locations')}
         onremove={(index) => removeStoryModuleItem('locations', index)}
         onimage={(index) => generateItemImage('locations', index)}
+        onagentreview={handleAgentReview}
       />
       <StorySectionModule
         title="Objects"
@@ -759,19 +830,23 @@
         extraKey="tags"
         tooltip={STORY_FIELD_TOOLTIPS.objects}
         disabled={loading}
+        agentReviews={agentReviews.filter((review) => review.field === 'objects')}
         onupdate={(index, item) => updateStoryModuleItem('objects', index, item)}
         onadd={() => addStoryModuleItem('objects')}
         onremove={(index) => removeStoryModuleItem('objects', index)}
         onimage={(index) => generateItemImage('objects', index)}
+        onagentreview={handleAgentReview}
       />
 
       <StoryOpeningsModule
         openings={story.openings ?? []}
         disabled={loading}
         tooltip={STORY_FIELD_TOOLTIPS.openings}
+        agentReviews={agentReviews.filter((review) => review.field === 'openings')}
         onupdate={(index, opening) => updateStoryModuleItem('openings', index, opening)}
         onadd={() => addStoryModuleItem('openings')}
         onremove={(index) => removeStoryModuleItem('openings', index)}
+        onagentreview={handleAgentReview}
       />
     </div>
 

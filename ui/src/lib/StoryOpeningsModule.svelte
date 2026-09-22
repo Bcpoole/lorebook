@@ -1,11 +1,15 @@
 <script>
+  import AgentReviewControls from './AgentReviewControls.svelte'
+
   let {
     openings = [],
     disabled = false,
     tooltip = '',
+    agentReviews = [],
     onupdate = () => {},
     onadd = () => {},
     onremove = () => {},
+    onagentreview = () => {},
   } = $props()
 
   function updateOpening(index, patch) {
@@ -42,7 +46,10 @@
   </header>
 
   {#each openings as opening, openingIndex}
-    <article class="opening-card">
+    {@const agentReview = agentReviews.find((review) => review.entity_index === openingIndex)}
+    {@const displayOpening = agentReview?.view === 'old' ? agentReview.before ?? {} : opening}
+    <article class:agent-reviewing={Boolean(agentReview)} class="opening-card">
+      <AgentReviewControls review={agentReview} onreview={onagentreview} />
       <button
         type="button"
         class="remove-opening"
@@ -52,21 +59,21 @@
       >×</button>
       <textarea
         rows="3"
-        value={opening.description ?? ''}
+        value={displayOpening.description ?? ''}
         placeholder="Optional guidance explaining when to choose this opening."
         aria-label={`Opening ${openingIndex + 1} description`}
         oninput={(event) => updateOpening(openingIndex, { description: event.currentTarget.value })}
-        disabled={disabled}
+        disabled={disabled || agentReview?.view === 'old'}
       ></textarea>
 
       <div class="messages">
-        {#each opening.messages ?? [] as message, messageIndex}
+        {#each displayOpening.messages ?? [] as message, messageIndex}
           <div class="message-row">
             <select
               value={message.role ?? 'assistant'}
               aria-label={`Opening ${openingIndex + 1} message ${messageIndex + 1} role`}
               onchange={(event) => updateMessage(openingIndex, messageIndex, { role: event.currentTarget.value })}
-              disabled={disabled}
+              disabled={disabled || agentReview?.view === 'old'}
             >
               <option value="assistant">Assistant</option>
               <option value="user">User</option>
@@ -78,7 +85,7 @@
               placeholder="Opening message..."
               aria-label={`Opening ${openingIndex + 1} message ${messageIndex + 1}`}
               oninput={(event) => updateMessage(openingIndex, messageIndex, { content: event.currentTarget.value })}
-              disabled={disabled}
+              disabled={disabled || agentReview?.view === 'old'}
             ></textarea>
             <button
               type="button"
@@ -115,11 +122,16 @@
     border: 1px solid var(--lb-border-1, #334155); border-radius: 8px;
     background: rgba(15, 23, 42, 0.38);
   }
+  .opening-card.agent-reviewing {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.2);
+  }
   .remove-opening, .remove-message {
     border: 0; border-radius: 4px; background: rgba(51, 65, 85, 0.8);
     color: #fca5a5; width: 1.5rem; height: 1.5rem;
   }
   .remove-opening { position: absolute; top: 0.45rem; right: 0.45rem; z-index: 1; }
+  .opening-card.agent-reviewing .remove-opening { top: 3.35rem; }
   textarea, select {
     box-sizing: border-box; border: 1px solid var(--lb-border-1, #475569);
     border-radius: 6px; padding: 0.5rem 0.6rem; background: rgba(30, 41, 59, 0.85);

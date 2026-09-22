@@ -12,6 +12,7 @@
   import LocationPage from './lib/LocationPage.svelte'
   import ObjectPage from './lib/ObjectPage.svelte'
   import PersonaPage from './lib/PersonaPage.svelte'
+  import PageAgentPanel from './lib/PageAgentPanel.svelte'
   import { DraftSyncController } from './lib/draftSync'
   import { PollingQueue } from './lib/pollingQueue'
 
@@ -94,6 +95,12 @@
     savedRun: null,
     savedName: '',
   })
+  let pageAgentReviews = $state({
+    world: [],
+    story: [],
+    character: [],
+  })
+  let nextPageAgentReviewId = 1
 
   const DEFAULT_EXPERIMENTATION = {
     general: {
@@ -232,11 +239,6 @@
     const selectedId = experimentationLive?.general?.persona || 'blank'
     const found = personaOptions.find((persona) => persona.id === selectedId)
     return found || personaOptions[0] || null
-  })
-
-  const selectedPersonaTagList = $derived.by(() => {
-    if (!selectedPersona?.tags || !Array.isArray(selectedPersona.tags)) return []
-    return selectedPersona.tags.slice(0, 8)
   })
 
   const selectedUiShellTone = $derived.by(() => (
@@ -1084,6 +1086,157 @@
     await saveExperimentation()
   }
 
+  function pageAgentLabel() {
+    const labels = {
+      world: 'World',
+      story: 'Story',
+      character: 'Character',
+      gallery: 'Gallery',
+      personas: 'Personas',
+      'world-story': 'Lore',
+    }
+    return labels[activeTab] ?? 'Page'
+  }
+
+  function pageAgentContext() {
+    if (activeTab === 'world') {
+      return {
+        raw_idea: currentRawIdea,
+        active_agent: activeAgentTab,
+        editable: {
+          world_setting: state.world_setting ?? '',
+          characters: state.characters ?? [],
+          critique_notes: state.critique_notes ?? '',
+          passed_inspection: Boolean(state.passed_inspection),
+        },
+      }
+    }
+    if (activeTab === 'story') {
+      return {
+        raw_idea: storyPageState.rawIdea,
+        story_setup: storyPageState.storySetup,
+        instruction: storyPageState.storyInstruction,
+        editable: storyPageState.story ?? {},
+      }
+    }
+    if (activeTab === 'character') {
+      return {
+        raw_idea: characterPageState.rawIdea,
+        active_agent: characterPageState.activeAgent,
+        editable: {
+          world_setting: characterPageState.workflowState.world_setting ?? '',
+          characters: characterPageState.workflowState.characters ?? [],
+          critique_notes: characterPageState.workflowState.critique_notes ?? '',
+          passed_inspection: Boolean(characterPageState.workflowState.passed_inspection),
+        },
+      }
+    }
+    return {
+      page_description: `${pageAgentLabel()} browsing and management page`,
+      editable: {},
+    }
+  }
+
+  function cloneAgentValue(value) {
+    if (value === undefined) return undefined
+    return JSON.parse(JSON.stringify(value))
+  }
+
+  function applyAgentChange(editable, change, value) {
+    if (!Number.isInteger(change.entity_index)) {
+      return { ...editable, [change.field]: cloneAgentValue(value) }
+    }
+
+    const items = [...(editable?.[change.field] ?? [])]
+    if (value === null || value === undefined) {
+      if (change.entity_index < items.length) items.splice(change.entity_index, 1)
+    } else if (change.entity_index < items.length) {
+      items[change.entity_index] = cloneAgentValue(value)
+    } else {
+      items.push(cloneAgentValue(value))
+    }
+    return { ...editable, [change.field]: items }
+  }
+
+  function setPageWorkingCopy(page, editable) {
+    if (page === 'world') {
+      state = editable
+    } else if (page === 'story') {
+      storyPageState.story = editable
+    } else if (page === 'character') {
+      characterPageState.workflowState = editable
+    }
+  }
+
+  function getPageWorkingCopy(page) {
+    if (page === 'world') return state
+    if (page === 'story') return storyPageState.story ?? {}
+    if (page === 'character') return characterPageState.workflowState
+    return {}
+  }
+
+  function pageAgentReviewKey(change) {
+    return `${change.field}:${Number.isInteger(change.entity_index) ? change.entity_index : 'field'}`
+  }
+
+  function handlePageAgentProposals({ page, changes }) {
+    if (!Array.isArray(changes) || changes.length === 0) return
+
+    let workingCopy = getPageWorkingCopy(page)
+    const currentReviews = pageAgentReviews[page] ?? []
+    const nextReviews = [...currentReviews]
+
+    for (const change of changes) {
+      workingCopy = applyAgentChange(workingCopy, change, change.after)
+      const key = pageAgentReviewKey(change)
+      const existingIndex = nextReviews.findIndex((review) => review.key === key)
+      const existing = existingIndex >= 0 ? nextReviews[existingIndex] : null
+      const review = {
+        ...change,
+        id: existing?.id ?? nextPageAgentReviewId++,
+        key,
+        before: existing?.before ?? cloneAgentValue(change.before),
+        after: cloneAgentValue(change.after),
+        view: 'new',
+      }
+      if (existingIndex >= 0) {
+        nextReviews[existingIndex] = review
+      } else {
+        nextReviews.push(review)
+      }
+    }
+
+    setPageWorkingCopy(page, workingCopy)
+    pageAgentReviews = { ...pageAgentReviews, [page]: nextReviews }
+  }
+
+  function handlePageAgentReview({ page, reviewId, action, view }) {
+    const reviews = pageAgentReviews[page] ?? []
+    const review = reviews.find((item) => item.id === reviewId)
+    if (!review) return
+
+    if (action === 'view') {
+      pageAgentReviews = {
+        ...pageAgentReviews,
+        [page]: reviews.map((item) => (item.id === reviewId ? { ...item, view } : item)),
+      }
+      return
+    }
+
+    if (action === 'revert') {
+      const workingCopy = applyAgentChange(getPageWorkingCopy(page), review, review.before)
+      setPageWorkingCopy(page, workingCopy)
+    }
+    pageAgentReviews = {
+      ...pageAgentReviews,
+      [page]: reviews.filter((item) => item.id !== reviewId),
+    }
+  }
+
+  function handlePageAgentSaved({ page }) {
+    pageAgentReviews = { ...pageAgentReviews, [page]: [] }
+  }
+
   async function handleRun({ rawIdea }) {
     if (!(await ensureApiReady())) {
       return
@@ -1923,6 +2076,9 @@
         bind:storySetup={storyPageState.storySetup}
         bind:storyInstruction={storyPageState.storyInstruction}
         bind:generationQuality={storyPageState.generationQuality}
+        agentReviews={pageAgentReviews.story}
+        onagentreview={handlePageAgentReview}
+        onagentsaved={handlePageAgentSaved}
       />
     {:else if activeTab === 'character'}
       <CharacterPage
@@ -1950,41 +2106,17 @@
     {/if}
     </main>
 
-    <aside class="persona-side-panel">
-      <div class="persona-side-header">Agent Persona</div>
-      <div class="persona-side-body">
-        <div class="control-group">
-          <label for="persona-select">Persona</label>
-          <select id="persona-select" value={experimentationLive.general?.persona || 'blank'} onchange={handlePersonaChanged}>
-            {#each personaOptions as persona}
-              <option value={persona.id}>{persona.name}</option>
-            {/each}
-          </select>
-        </div>
-
-        {#if selectedPersona}
-          <div class="persona-avatar-wrap">
-            {#if selectedPersona.avatarUrl}
-              <img class="persona-avatar" src={selectedPersona.avatarUrl} alt={`${selectedPersona.name} avatar`} width="256" height="256" />
-            {:else}
-              <div class="persona-avatar persona-avatar-placeholder">{selectedPersona.name?.slice(0, 1) || '?'}</div>
-            {/if}
-          </div>
-          <div class="persona-description">{selectedPersona.description}</div>
-          <div class="persona-tags">
-            {#if selectedPersonaTagList.length > 0}
-              {#each selectedPersonaTagList as tag}
-                <span class="persona-tag-badge">{tag}</span>
-              {/each}
-            {:else}
-              <span class="persona-tag-empty">No tags</span>
-            {/if}
-          </div>
-        {:else}
-          <p class="persona-empty">No persona options available.</p>
-        {/if}
-      </div>
-    </aside>
+    <PageAgentPanel
+      page={activeTab}
+      pageLabel={pageAgentLabel()}
+      context={pageAgentContext()}
+      {personaOptions}
+      {selectedPersona}
+      selectedPersonaId={experimentationLive.general?.persona || 'blank'}
+      connected={apiReady()}
+      onpersonachanged={handlePersonaChanged}
+      onproposals={handlePageAgentProposals}
+    />
   </div>
 </div>
 
@@ -1999,7 +2131,11 @@
   :global(#app) {
     font-family: inherit;
     margin: 0;
-    min-height: 100vh;
+    height: 100vh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     background: var(--app-shell-root, #020617);
   }
 
@@ -2008,9 +2144,11 @@
   }
 
   .app-container {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
-    height: 100vh;
     position: relative;
+    overflow: hidden;
     background: var(--app-shell-root, #020617);
   }
 
@@ -2049,8 +2187,10 @@
   .workspace-area {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     display: flex;
     position: relative;
+    overflow: hidden;
   }
 
   @media (max-width: 980px) {
@@ -2092,121 +2232,6 @@
   .dark-ui-world {
     display: grid;
     gap: 0.75rem;
-  }
-
-  .persona-side-panel {
-    width: 280px;
-    border-left: 1px solid #1f2937;
-    background: #111827;
-    color: #e5e7eb;
-    font-family: inherit;
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
-  .persona-side-header {
-    padding: 0.75rem 0.9rem;
-    border-bottom: 1px solid #1f2937;
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #9ca3af;
-    background: #0b1220;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-  }
-
-  .persona-side-body {
-    padding: 0.8rem;
-    display: grid;
-    gap: 0.55rem;
-  }
-
-  .persona-side-body .control-group {
-    display: grid;
-    gap: 0.3rem;
-  }
-
-  .persona-side-body .control-group label {
-    font-size: 0.78rem;
-    color: #cbd5e1;
-  }
-
-  .persona-side-body select {
-    background: #111827;
-    color: #e5e7eb;
-    border: 1px solid #374151;
-    border-radius: 6px;
-    padding: 0.38rem 0.5rem;
-    font-size: 0.78rem;
-    font-family: inherit;
-  }
-
-  .persona-avatar-wrap {
-    display: flex;
-    justify-content: center;
-  }
-
-  .persona-avatar {
-    width: 256px;
-    height: 256px;
-    max-width: 100%;
-    border-radius: 10px;
-    border: 1px solid #374151;
-    object-fit: cover;
-    background: #0f172a;
-  }
-
-  .persona-avatar-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2.3rem;
-    font-weight: 700;
-    color: #94a3b8;
-    background: #1f2937;
-  }
-
-  .persona-description {
-    font-size: 0.79rem;
-    color: #cbd5e1;
-    line-height: 1.35;
-  }
-
-  .persona-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    border-top: 1px dashed #374151;
-    padding-top: 0.4rem;
-  }
-
-  .persona-tag-badge {
-    display: inline-block;
-    font-size: 0.7rem;
-    line-height: 1.1;
-    color: #94a3b8;
-    border: 1px solid #334155;
-    background: #1e293b;
-    padding: 0.18rem 0.45rem;
-    border-radius: 999px;
-  }
-
-  .persona-tag-empty {
-    font-size: 0.72rem;
-    color: #94a3b8;
-    font-style: italic;
-  }
-
-  .persona-empty {
-    margin: 0;
-    font-size: 0.8rem;
-    color: #94a3b8;
-    font-style: italic;
   }
 
   .loading,

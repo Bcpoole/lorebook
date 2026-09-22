@@ -213,4 +213,127 @@ describe('StoryPage', () => {
     const [, request] = fetchMock.mock.calls[0]
     expect(JSON.parse(request.body).state.story_artifact.title).toBe('New Skyfall')
   })
+
+  it('renders agent entity reviews on the affected story card', async () => {
+    const onagentreview = vi.fn()
+    const oldCharacter = {
+      name: 'Tom Morrison',
+      role: 'Beginner',
+      summary: 'A hesitant newcomer.',
+      tags: ['beginner'],
+    }
+    const newCharacter = {
+      ...oldCharacter,
+      summary: 'An enthusiastic newcomer obsessed with Muay Thai.',
+      tags: ['beginner', 'enthusiastic'],
+    }
+
+    render(StoryPage, {
+      rawIdea: 'A local tournament',
+      story: {
+        title: 'Tournament Day',
+        description: '',
+        plot: '',
+        setting: '',
+        style: '',
+        history: '',
+        tags: [],
+        characters_artifact: [newCharacter],
+        locations: [],
+        objects: [],
+        openings: [],
+      },
+      agentReviews: [
+        {
+          id: 1,
+          field: 'characters_artifact',
+          entity_index: 0,
+          label: 'Tom Morrison',
+          before: oldCharacter,
+          after: newCharacter,
+          view: 'new',
+        },
+      ],
+      onagentreview,
+    })
+
+    expect(screen.getByText('Agent edit · Tom Morrison')).toBeInTheDocument()
+    expect(screen.getByLabelText('Characters 1 Summary')).toHaveValue(newCharacter.summary)
+    expect(screen.getByText('1 agent edit staged')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Old' }))
+    expect(onagentreview).toHaveBeenCalledWith({
+      page: 'story',
+      reviewId: 1,
+      action: 'view',
+      view: 'old',
+    })
+  })
+
+  it('disables Save when clean, overwrites the current run, and adopts a saved copy', async () => {
+    let newSaveCount = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, request) => {
+      if (String(input) === '/api/draft') {
+        return { ok: true, async json() { return { ok: true } } }
+      }
+      const body = JSON.parse(request.body)
+      const filename = body.filename || `tournament-day-copy-${++newSaveCount}`
+      return {
+        ok: true,
+        async json() {
+          return { filename, run_id: filename }
+        },
+      }
+    })
+
+    render(StoryPage, {
+      rawIdea: 'A local tournament',
+      story: {
+        title: 'Tournament Day',
+        description: 'First version.',
+        plot: '',
+        setting: '',
+        style: '',
+        history: '',
+        tags: [],
+        characters_artifact: [],
+        locations: [],
+        objects: [],
+        openings: [],
+      },
+    })
+
+    const saveButton = screen.getByRole('button', { name: 'Save', exact: true })
+    const saveCopyButton = screen.getByRole('button', { name: 'Save as Copy' })
+    expect(saveButton).toBeEnabled()
+
+    await fireEvent.click(saveButton)
+    await waitFor(() => expect(saveButton).toBeDisabled())
+    expect(screen.getByText('Saved as tournament-day-copy-1')).toBeInTheDocument()
+
+    await fireEvent.input(screen.getByLabelText('Story summary'), {
+      target: { value: 'Second version.' },
+    })
+    expect(saveButton).toBeEnabled()
+
+    await fireEvent.click(saveButton)
+    await waitFor(() => expect(saveButton).toBeDisabled())
+
+    const saveRequests = fetchMock.mock.calls
+      .filter(([url]) => String(url) === '/api/save')
+      .map(([, request]) => JSON.parse(request.body))
+    expect(saveRequests[0].filename).toBeUndefined()
+    expect(saveRequests[1].filename).toBe('tournament-day-copy-1')
+
+    await fireEvent.click(saveCopyButton)
+    await waitFor(() => {
+      expect(screen.getByText('Saved as tournament-day-copy-2')).toBeInTheDocument()
+      expect(saveButton).toBeDisabled()
+    })
+    const finalSaveRequest = fetchMock.mock.calls
+      .filter(([url]) => String(url) === '/api/save')
+      .map(([, request]) => JSON.parse(request.body))
+      .at(-1)
+    expect(finalSaveRequest.filename).toBeUndefined()
+  })
 })

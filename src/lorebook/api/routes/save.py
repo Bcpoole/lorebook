@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Any, Dict
+from uuid import uuid4
 
 from fastapi import APIRouter
 
@@ -25,6 +26,13 @@ def _sanitize(name: str) -> str:
     name = re.sub(r"[^\w\s-]", "", name.lower().strip())
     name = re.sub(r"[\s-]+", "_", name).strip("_")
     return name or "lorebook_run"
+
+
+def _story_filename(title: Any) -> str:
+    title_prefix = str(title or "untitled-story").strip()[:40]
+    title_prefix = unicodedata.normalize("NFKD", title_prefix).encode("ascii", "ignore").decode()
+    title_prefix = re.sub(r"[^a-zA-Z0-9]+", "-", title_prefix).strip("-").lower()
+    return f"{title_prefix or 'untitled-story'}-{uuid4().hex}"
 
 
 def _story_item_filename(base_name: str, section: str, index: int, item: dict[str, Any]) -> str:
@@ -173,10 +181,13 @@ async def save_run(body: Dict[str, Any]) -> Dict[str, Any]:
         "state": state,
         "meta": body.get("meta", {}),
     }
-    saved = save_run_result(payload, filename=filename)
-
     source = str((payload.get("meta") or {}).get("source") or "").strip().lower()
     story_artifact = state.get("story_artifact")
+    if not filename and source == "story" and isinstance(story_artifact, dict):
+        filename = _story_filename(story_artifact.get("title"))
+
+    saved = save_run_result(payload, filename=filename)
+
     if source == "story" and isinstance(story_artifact, dict):
         _save_story_sub_artifacts(
             base_filename=str(saved.get("filename") or "story"),
