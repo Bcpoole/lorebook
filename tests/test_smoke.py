@@ -1,5 +1,5 @@
-from lorebook.graph import app
-from lorebook.nodes import route_after_critique
+from lorebook.workflow.graph import app
+from lorebook.workflow.nodes import route_after_critique
 
 
 def test_app_compiles() -> None:

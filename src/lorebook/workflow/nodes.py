@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Dict
 
-from .characters import infer_character_name, should_replace_character_name
-from .llm import call_local_llm
+from lorebook.characters import infer_character_name, should_replace_character_name
+from lorebook.llm import call_local_llm
+
 from .state import WizardState
 
 
@@ -28,7 +29,11 @@ def character_designer_node(state: WizardState) -> Dict[str, list[Dict[str, str]
         if should_replace_character_name(first.get("name", "")):
             first["name"] = infer_character_name(result, fallback="Character 1")
         return {"characters": [first, *existing[1:]]}
-    return {"characters": [{"name": infer_character_name(result, fallback="Character 1"), "details": result}]}
+    return {
+        "characters": [
+            {"name": infer_character_name(result, fallback="Character 1"), "details": result}
+        ]
+    }
 
 
 def editor_node(state: WizardState) -> Dict[str, str | bool]:
@@ -43,10 +48,7 @@ def editor_node(state: WizardState) -> Dict[str, str | bool]:
         details = character.get("details", "")
         character_sections.append(f"Character {index} - {name}:\n{details}")
     characters_block = "\n\n".join(character_sections)
-    prompt = (
-        f"Setting:\n{state['world_setting']}\n\n"
-        f"Characters:\n{characters_block}"
-    )
+    prompt = f"Setting:\n{state['world_setting']}\n\nCharacters:\n{characters_block}"
     result = call_local_llm(system_prompt, prompt)
 
     if "PASSED" in result:

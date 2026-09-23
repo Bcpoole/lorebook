@@ -4,14 +4,47 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from lorebook.api.routes import experimentation, graph, personas, personas_crud, run, save, stream, user_assets
+from lorebook.api.routes import (
+    characters,
+    experimentation,
+    gallery,
+    graph,
+    images,
+    page_agent,
+    personas,
+    personas_crud,
+    save,
+    stories,
+    stream,
+    system,
+    user_assets,
+    workflow,
+)
+from lorebook.errors import (
+    ArtifactAssemblyError,
+    GenerationUnavailableError,
+    InvalidRequestError,
+)
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Lorebook API", version="0.1.0")
+
+    app.add_exception_handler(
+        InvalidRequestError,
+        lambda _request, exc: JSONResponse(status_code=400, content={"detail": str(exc)}),
+    )
+    app.add_exception_handler(
+        GenerationUnavailableError,
+        lambda _request, exc: JSONResponse(status_code=503, content={"detail": str(exc)}),
+    )
+    app.add_exception_handler(
+        ArtifactAssemblyError,
+        lambda _request, exc: JSONResponse(status_code=500, content={"detail": str(exc)}),
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -20,7 +53,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(run.router, prefix="/api")
+    app.include_router(system.router, prefix="/api")
+    app.include_router(gallery.router, prefix="/api")
+    app.include_router(stories.router, prefix="/api")
+    app.include_router(characters.router, prefix="/api")
+    app.include_router(images.router, prefix="/api")
+    app.include_router(workflow.router, prefix="/api")
+    app.include_router(page_agent.router, prefix="/api")
     app.include_router(stream.router, prefix="/api")
     app.include_router(graph.router, prefix="/api")
     app.include_router(save.router, prefix="/api")
@@ -39,6 +78,7 @@ def create_app() -> FastAPI:
     if dist_dir.exists():
         app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="ui")
     else:
+
         @app.get("/", response_class=HTMLResponse)
         async def root() -> str:
             return (

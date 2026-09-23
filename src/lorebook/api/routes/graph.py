@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 
-from lorebook.graph import build_app
+from lorebook.workflow.graph import build_app
 
 router = APIRouter()
 

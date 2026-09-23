@@ -12,7 +12,7 @@ from lorebook.characters import infer_character_name, should_replace_character_n
 from lorebook.api.storage import save_draft_state, save_run_result
 from lorebook.llm import stream_local_llm
 from lorebook.config.prompts import get_persona_prompts
-from lorebook.state import WizardState
+from lorebook.workflow.state import WizardState
 
 router = APIRouter()
 

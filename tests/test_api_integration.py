@@ -91,7 +91,7 @@ def test_draft_endpoint_persists_latest_state(tmp_path: Path, monkeypatch) -> No
 
 
 def test_character_image_endpoint_updates_state(tmp_path: Path, monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.imaging import service as run_routes
 
     images_dir = tmp_path / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +135,7 @@ def test_character_image_endpoint_updates_state(tmp_path: Path, monkeypatch) -> 
 
 
 def test_character_image_uses_negative_prompt_from_sd_settings(tmp_path: Path, monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.imaging import service as run_routes
 
     images_dir = tmp_path / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -186,7 +186,7 @@ def test_character_image_uses_negative_prompt_from_sd_settings(tmp_path: Path, m
 
 
 def test_character_image_empty_negative_prompt_uses_style_defaults(tmp_path: Path, monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.imaging import service as run_routes
 
     images_dir = tmp_path / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -235,7 +235,7 @@ def test_character_image_empty_negative_prompt_uses_style_defaults(tmp_path: Pat
 
 
 def test_character_image_endpoint_fails_before_prompt_generation_when_sd_unavailable(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.imaging import service as run_routes
 
     calls = {"llm": 0}
 
@@ -272,7 +272,7 @@ def test_character_image_endpoint_fails_before_prompt_generation_when_sd_unavail
 
 
 def test_step_with_directive_overwrites_not_appends(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.workflow import service as run_routes
 
     calls = {"count": 0}
 
@@ -313,7 +313,7 @@ def test_step_with_directive_overwrites_not_appends(monkeypatch) -> None:
 
 
 def test_llm_health_endpoint_reports_connectivity(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import system as run_routes
 
     monkeypatch.setattr(run_routes, "is_local_llm_available", lambda: False)
 
@@ -354,7 +354,7 @@ def test_draft_endpoint_can_clear_latest_draft() -> None:
 
 def test_character_designer_rejects_meta_responses(monkeypatch) -> None:
     """Verify character_designer guardrail retries on meta responses like 'I understand...'."""
-    from lorebook.api.routes import run as run_routes
+    from lorebook.workflow import service as run_routes
 
     calls = {"count": 0, "prompts": []}
 
@@ -404,7 +404,7 @@ def test_character_designer_rejects_meta_responses(monkeypatch) -> None:
 
 
 def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -429,7 +429,7 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
 
 
 def test_page_agent_returns_validated_component_proposals(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import page_agent as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -476,7 +476,7 @@ def test_page_agent_returns_validated_component_proposals(monkeypatch) -> None:
 
 
 def test_page_agent_expands_single_entity_into_array_component(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import page_agent as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -522,7 +522,7 @@ def test_page_agent_expands_single_entity_into_array_component(monkeypatch) -> N
 
 
 def test_page_agent_rejects_invalid_model_response(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import page_agent as run_routes
 
     monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "not json")
     response = TestClient(create_app()).post(
@@ -541,7 +541,7 @@ def test_page_agent_rejects_invalid_model_response(monkeypatch) -> None:
 def test_story_persona_layer_preserves_task_contract(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -564,7 +564,7 @@ def test_story_persona_layer_preserves_task_contract(monkeypatch) -> None:
 
 
 def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     storage.save_draft_state(
         {
@@ -598,7 +598,7 @@ def test_story_endpoint_keeps_world_draft_isolated(monkeypatch) -> None:
 
 
 def test_story_endpoint_accepts_setup_and_instruction(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     calls: dict[str, str] = {"prompt": ""}
 
@@ -637,7 +637,7 @@ def test_story_endpoint_accepts_setup_and_instruction(monkeypatch) -> None:
 
 
 def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     calls: dict[str, str] = {"prompt": ""}
 
@@ -683,7 +683,7 @@ def test_story_endpoint_supports_story_actions(monkeypatch) -> None:
 
 
 def test_story_action_fallback_preserves_existing_sections(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     # Return malformed output twice (initial + repair) to force fallback on the action update.
     monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: '{"characters_artifact":[{"name":"Owl"')
@@ -720,7 +720,7 @@ def test_story_action_fallback_preserves_existing_sections(monkeypatch) -> None:
 
 
 def test_story_item_update_and_delete(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "unused")
 
@@ -770,7 +770,7 @@ def test_story_item_update_and_delete(monkeypatch) -> None:
 
 
 def test_story_item_prompt_generation(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "detailed concept art, cinematic lighting")
 
@@ -806,7 +806,7 @@ def test_story_item_prompt_generation(monkeypatch) -> None:
 
 
 def test_story_item_image_mode_returns_image_name(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import stories as run_routes
 
     monkeypatch.setattr(run_routes, "_story_item_sd_prompt", lambda *args, **kwargs: "detailed concept art")
     monkeypatch.setattr(run_routes, "_assert_sd_available", lambda *args, **kwargs: None)
@@ -850,7 +850,7 @@ def test_story_item_image_mode_returns_image_name(monkeypatch) -> None:
 
 
 def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -875,7 +875,7 @@ def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
 
 
 def test_story_endpoint_orchestrates_sections_with_safe_token_floors(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     budgets: list[int] = []
 
@@ -932,7 +932,7 @@ def test_story_endpoint_orchestrates_sections_with_safe_token_floors(monkeypatch
 
 
 def test_story_sections_clean_markdown_labels_and_preserve_required_headings(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.story import service as run_routes
 
     def generate(system_prompt: str, *_args, **_kwargs) -> str:
         if "orchestrator" in system_prompt:
@@ -975,7 +975,7 @@ def test_story_sections_clean_markdown_labels_and_preserve_required_headings(mon
 
 
 def test_character_endpoint_returns_single_character(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.characters import service as run_routes
 
     monkeypatch.setattr(run_routes, "call_local_llm", lambda *args, **kwargs: "Character: Mira\nA precise navigator.")
 
@@ -990,7 +990,7 @@ def test_character_endpoint_returns_single_character(monkeypatch) -> None:
 
 
 def test_character_related_creates_bidirectional_relationships_and_persists_on_save(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import characters as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -1048,7 +1048,7 @@ def test_character_related_creates_bidirectional_relationships_and_persists_on_s
 
 
 def test_character_related_uses_inverse_for_car_dealer_relationship(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import characters as run_routes
 
     monkeypatch.setattr(
         run_routes,
@@ -1142,7 +1142,7 @@ def test_gallery_endpoint_filters_by_artifact_type() -> None:
 
 
 def test_sd_styles_endpoint_honors_include_defaults_query(monkeypatch) -> None:
-    from lorebook.api.routes import run as run_routes
+    from lorebook.api.routes import images as run_routes
 
     calls: list[bool] = []
 

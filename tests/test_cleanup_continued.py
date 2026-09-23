@@ -1,6 +1,6 @@
 """Test output cleanup for continued generation."""
 
-from lorebook.api.routes.run import _clean_continued_output
+from lorebook.workflow.text import _clean_continued_output
 
 
 def test_clean_continued_removes_continued_markers() -> None:

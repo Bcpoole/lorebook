@@ -13,4 +13,4 @@ app = importlib.import_module("lorebook").app
 
 if __name__ == "__main__":
     print("Lorebook workflow is ready.")
-    print("Import `app` from lorebook.graph and invoke it with an initial state.")
+    print("Import `app` from lorebook.workflow.graph and invoke it with an initial state.")

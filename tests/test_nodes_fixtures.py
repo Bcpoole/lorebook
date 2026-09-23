@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from lorebook.characters import infer_character_name
-from lorebook.nodes import character_designer_node, editor_node, loremaster_node
+from lorebook.workflow.nodes import character_designer_node, editor_node, loremaster_node
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
@@ -18,7 +18,7 @@ def test_loremaster_uses_saved_real_output(monkeypatch) -> None:
         _ = user_prompt
         return expected
 
-    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+    monkeypatch.setattr("lorebook.workflow.nodes.call_local_llm", fake_llm)
 
     state = {
         "raw_idea": "test idea",
@@ -39,7 +39,7 @@ def test_character_designer_uses_saved_real_output(monkeypatch) -> None:
         _ = user_prompt
         return expected
 
-    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+    monkeypatch.setattr("lorebook.workflow.nodes.call_local_llm", fake_llm)
 
     state = {
         "raw_idea": "",
@@ -70,7 +70,7 @@ def test_editor_node_offline_non_passed(monkeypatch) -> None:
         _ = user_prompt
         return critique
 
-    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+    monkeypatch.setattr("lorebook.workflow.nodes.call_local_llm", fake_llm)
 
     state = {
         "raw_idea": "",
@@ -90,7 +90,7 @@ def test_editor_node_offline_passed(monkeypatch) -> None:
         _ = user_prompt
         return "PASSED"
 
-    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+    monkeypatch.setattr("lorebook.workflow.nodes.call_local_llm", fake_llm)
 
     state = {
         "raw_idea": "",
@@ -112,7 +112,7 @@ def test_editor_node_uses_all_characters(monkeypatch) -> None:
         captured["prompt"] = user_prompt
         return "PASSED"
 
-    monkeypatch.setattr("lorebook.nodes.call_local_llm", fake_llm)
+    monkeypatch.setattr("lorebook.workflow.nodes.call_local_llm", fake_llm)
 
     state = {
         "raw_idea": "",

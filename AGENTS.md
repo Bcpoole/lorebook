@@ -2,8 +2,10 @@
 
 This repository uses a package layout under `src/lorebook/` with a compatibility launcher in `run.py`.
 
-- Core graph composition lives in `src/lorebook/graph.py`.
-- Node implementations live in `src/lorebook/nodes.py`.
+- Core graph composition lives in `src/lorebook/workflow/graph.py`.
+- Node implementations live in `src/lorebook/workflow/nodes.py`.
+- Workflow state, synchronous execution, and streaming live under `src/lorebook/workflow/`.
+- Story, character, image, and page-agent behavior live in their corresponding feature packages.
 - LLM transport helper lives in `src/lorebook/llm.py`.
 
 ## Agent Roles in `run.py`
@@ -28,7 +30,13 @@ The logical agent roles are implemented in package node functions and surfaced b
 The FastAPI backend lives in `src/lorebook/api/`:
 
 - `app.py` — FastAPI application factory; CORS configured for `localhost:5173`
-- `routes/run.py` — `POST /api/run` — blocking full-graph invocation
+- `routes/workflow.py` — workflow run, step, streaming, and review endpoints
+- `routes/stories.py` — story generation and story-item endpoints
+- `routes/characters.py` — character generation, relationships, and role endpoints
+- `routes/images.py` — character image generation and SD style endpoints
+- `routes/gallery.py` — gallery and saved-run lookup endpoints
+- `routes/page_agent.py` — page-level creative agent endpoint
+- `routes/system.py` — health and draft endpoints
 - `routes/stream.py` — `GET /api/stream?raw_idea=...` — SSE per-node streaming
 - `routes/graph.py` — `GET /api/graph` — Mermaid diagram of the workflow
 - `routes/save.py` — `POST /api/save` — save run with story sub-artifact extraction
