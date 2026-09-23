@@ -411,7 +411,7 @@ def test_story_endpoint_returns_structured_artifact(monkeypatch) -> None:
         "call_local_llm",
         lambda *args, **kwargs: (
             '{"title":"Skyfall","description":"A compact description with enough words to pass quality thresholds cleanly.","plot":"A then B then C.",'
-            '"setting":"Sky archipelago","style":"heroic","history":"The storm arrived yesterday.","tags":["sky"],'
+            '"setting":"Sky archipelago","style":"heroic","brief":"A pilot must save a flying city.","history":"The storm arrived yesterday.","tags":["sky"],'
             '"characters_artifact":[{"name":"Ari","role":"pilot","summary":"ace","tags":["pilot"]}],'
             '"locations":[{"name":"Dock","description":"windy","tags":["port"]}],'
             '"objects":[{"name":"Compass","description":"arcane","tags":["artifact"]}],'
@@ -860,7 +860,7 @@ def test_story_endpoint_parses_fenced_json_output(monkeypatch) -> None:
             "```json\n"
             '{"title":"Fenced","description":"A full fenced JSON payload with sufficient words for direct parsing.",'
             '"plot":["A","B","C","D","E"],'
-            '"setting":"Cloud city","style":"adventure","tags":["sky"],'
+            '"setting":"Cloud city","style":"adventure","brief":"A cloud-city adventure.","tags":["sky"],'
             '"history":"Earlier events.","characters_artifact":[],"locations":[],"objects":[],"openings":[{"description":"","messages":[{"role":"assistant","content":"Open."}]}]}'
             "\n```"
         ),
@@ -882,15 +882,17 @@ def test_story_endpoint_orchestrates_sections_with_safe_token_floors(monkeypatch
     def generate(system_prompt: str, *_args, **kwargs) -> str:
         budgets.append(kwargs["max_length"])
         if "orchestrator" in system_prompt:
-            return json.dumps(
-                {
-                    "description": "A pilot races a gathering storm to save her floating home.",
-                    "setting": "A floating archipelago",
-                    "style": "adventure",
-                    "tags": ["sky"],
-                    "brief": "A daring pilot must outrun a storm and protect her home.",
-                }
-            )
+            return "Keep the sky setting, storm conflict, and adventurous tone consistent."
+        if "story-brief specialist" in system_prompt:
+            return "A daring pilot must outrun a storm and protect her home."
+        if "story-description specialist" in system_prompt:
+            return "A pilot races a gathering storm to save her floating home."
+        if "story-setting specialist" in system_prompt:
+            return "A floating archipelago"
+        if "story-style specialist" in system_prompt:
+            return "adventure"
+        if "story-tag specialist" in system_prompt:
+            return "sky, storm, pilot"
         if "title specialist" in system_prompt:
             return "Stormbound"
         if "plot specialist" in system_prompt:
@@ -918,10 +920,14 @@ def test_story_endpoint_orchestrates_sections_with_safe_token_floors(monkeypatch
     assert response.status_code == 200
     artifact = response.json()["story_artifact"]
     assert artifact["title"] == "Stormbound"
+    assert artifact["description"] == "A pilot races a gathering storm to save her floating home."
+    assert artifact["setting"] == "A floating archipelago"
+    assert artifact["style"] == "adventure"
+    assert artifact["tags"] == ["sky", "storm", "pilot"]
     assert artifact["plot"] == "- Alarm\n- Departure\n- Setback\n- Revelation\n- Return"
     assert artifact["history"] == "The storm destroyed the eastern docks the previous night."
     assert artifact["openings"][0]["messages"][0]["content"] == "The first siren sounded before dawn."
-    assert len(budgets) == 8
+    assert len(budgets) == 13
     assert min(budgets) >= 80
 
 
@@ -930,7 +936,17 @@ def test_story_sections_clean_markdown_labels_and_preserve_required_headings(mon
 
     def generate(system_prompt: str, *_args, **_kwargs) -> str:
         if "orchestrator" in system_prompt:
-            return '{"description":"A contest becomes a crisis.","setting":"A detailed market with rules and atmosphere.","style":"comic adventure","tags":[],"brief":"Contest crisis."}'
+            return "Keep the market contest and escalating crisis consistent."
+        if "story-brief specialist" in system_prompt:
+            return "A market contest becomes a crisis."
+        if "story-description specialist" in system_prompt:
+            return "A contest becomes a crisis."
+        if "story-setting specialist" in system_prompt:
+            return "A detailed market with rules and atmosphere."
+        if "story-style specialist" in system_prompt:
+            return "comic adventure"
+        if "story-tag specialist" in system_prompt:
+            return "market, contest, crisis"
         if "title specialist" in system_prompt:
             return "**The Great Grocery Gauntlet**"
         if "plot specialist" in system_prompt:

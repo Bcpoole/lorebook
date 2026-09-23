@@ -6,6 +6,7 @@ import os
 import re
 import time
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 from uuid import uuid4
@@ -483,66 +484,127 @@ def _extract_first_json_block(text: str) -> dict[str, Any] | None:
 
 
 _STORY_ORCHESTRATOR_SYSTEM = (
-    "You are the story-generation orchestrator. Turn the user's concept into a compact creative "
-    "brief for specialist writers. Return ONLY valid JSON with this schema: "
-    '{"description":"", "setting":"", "style":"", "tags":[""], "brief":""}. '
-    "description must be 128 words max; setting must be a rich 2-3 paragraph world description covering "
-    "place, atmosphere, relevant rules, and sensory details; brief must state the premise, conflict, stakes, and tone. "
-    "Do not write the title, plot, history, character entries, location entries, object entries, or openings."
+    "You are the story-generation orchestrator. Coordinate the specialist writers by identifying "
+    "dependencies, consistency constraints, and how their sections should fit together. Return only "
+    "concise coordination notes for the specialists. Do not author any story artifact field, including "
+    "the title, description, setting, style, tags, brief, plot, history, characters, locations, objects, "
+    "or openings. Do not use JSON or markdown."
 )
 
-_STORY_SECTION_SPECS: tuple[tuple[str, str, int], ...] = (
-    (
-        "title",
-        "You are the title specialist. Using the story brief, create one evocative, specific title. "
-        "Return only the title on one line; do not use JSON or markdown.",
-        80,
+
+@dataclass(frozen=True, slots=True)
+class StorySectionSpec:
+    section: str
+    system_prompt: str
+    minimum_tokens: int
+
+
+_STORY_SECTION_SPECS: tuple[StorySectionSpec, ...] = (
+    StorySectionSpec(
+        section="brief",
+        system_prompt=(
+            "You are the story-brief specialist. Using the user's concept and the orchestrator's coordination "
+            "notes, state the premise, conflict, stakes, and tone in a compact creative brief. "
+            "Return only the brief."
+        ),
+        minimum_tokens=160,
     ),
-    (
-        "plot",
-        "You are the plot specialist. Using the story brief, write one cohesive plot or premise section. "
-        "Begin the response exactly with '# PLOT / PREMISE', then continue with the plot. Do not use JSON.",
-        280,
+    StorySectionSpec(
+        section="description",
+        system_prompt=(
+            "You are the story-description specialist. Using the story brief, write a concise description of "
+            "the story in 128 words or fewer. Return only the description."
+        ),
+        minimum_tokens=160,
     ),
-    (
-        "history",
-        "You are the story-history specialist. Summarize the important events immediately before the "
-        "story begins, emphasizing causes and unresolved consequences. Begin exactly with '# The Setting' "
-        "followed by '## What Came Before', then continue with concise prose or bullets. Do not use JSON. "
-        "Do not repeat the plot.",
-        220,
+    StorySectionSpec(
+        section="setting",
+        system_prompt=(
+            "You are the story-setting specialist. Using the story brief, write a rich 2-3 paragraph world "
+            "description covering place, atmosphere, relevant rules, and sensory details. "
+            "Return only the setting as prose paragraphs."
+        ),
+        minimum_tokens=120,
     ),
-    (
-        "characters_artifact",
-        "You are the character specialist. Using the story brief, create 2-4 story-relevant characters. "
-        "For each character, use exactly these labeled lines, separated by a blank line:\n"
-        "Name: <name>\nRole: <role>\nSummary: <concise summary>\nTags: <comma-separated tags>\n"
-        "The Name value must be a plain personal name only: no ranks, titles, nicknames, quoted aliases, "
-        "parenthetical epithets, or descriptive monikers. Do not use JSON.",
-        320,
+    StorySectionSpec(
+        section="style",
+        system_prompt=(
+            "You are the story-style specialist. Using the story brief, name the story's genre, tone, and "
+            "narrative style in one concise phrase. Return only the style phrase."
+        ),
+        minimum_tokens=80,
     ),
-    (
-        "locations",
-        "You are the location specialist. Using the story brief, create 2-3 locations that matter to the plot. "
-        "For each location, use exactly these labeled lines, separated by a blank line:\n"
-        "Name: <name>\nDescription: <concise description>\nTags: <comma-separated tags>\n"
-        "Do not use JSON.",
-        280,
+    StorySectionSpec(
+        section="tags",
+        system_prompt=(
+            "You are the story-tag specialist. Using the story brief, provide 3-6 concise discovery tags as "
+            "a comma-separated list without a label."
+        ),
+        minimum_tokens=80,
     ),
-    (
-        "objects",
-        "You are the story-object specialist. Using the story brief, create 1-3 meaningful objects that "
-        "advance, complicate, or symbolize the story. For each object, use exactly these labeled lines, "
-        "separated by a blank line:\nName: <name>\nDescription: <concise description>\n"
-        "Tags: <comma-separated tags>\nDo not use JSON.",
-        240,
+    StorySectionSpec(
+        section="title",
+        system_prompt=(
+            "You are the title specialist. Using the story brief, create one evocative, specific title. "
+            "Return only the title on one line."
+        ),
+        minimum_tokens=80,
     ),
-    (
-        "openings",
-        "You are the opening-scene specialist. Using the story brief, write a compelling, self-contained "
-        "opening of 2-4 paragraphs that establishes the protagonist, setting, and immediate tension. "
-        "Return only the prose; do not use JSON or markdown headings.",
-        360,
+    StorySectionSpec(
+        section="plot",
+        system_prompt=(
+            "You are the plot specialist. Using the story brief, write one cohesive plot or premise section. "
+            "Return only the plot or premise."
+        ),
+        minimum_tokens=400,
+    ),
+    StorySectionSpec(
+        section="history",
+        system_prompt=(
+            "You are the story-history specialist. Summarize the important events immediately before the "
+            "story begins, emphasizing causes and unresolved consequences. "
+            "Return only the history as concise prose or bullets, without repeating the plot."
+        ),
+        minimum_tokens=220,
+    ),
+    StorySectionSpec(
+        section="characters_artifact",
+        system_prompt=(
+            "You are the character specialist. Using the story brief, create 2-4 story-relevant characters. "
+            "For each character, use exactly these labeled lines, separated by a blank line:\n"
+            "Name: <name>\nRole: <role>\nSummary: <concise summary>\nTags: <comma-separated tags>\n"
+            "The Name value must be a plain personal name only: no ranks, titles, nicknames, quoted aliases, "
+            "parenthetical epithets, or descriptive monikers."
+        ),
+        minimum_tokens=320,
+    ),
+    StorySectionSpec(
+        section="locations",
+        system_prompt=(
+            "You are the location specialist. Using the story brief, create 2-3 locations that matter to the plot. "
+            "For each location, use exactly these labeled lines, separated by a blank line:\n"
+            "Name: <name>\nDescription: <concise description>\nTags: <comma-separated tags>"
+        ),
+        minimum_tokens=280,
+    ),
+    StorySectionSpec(
+        section="objects",
+        system_prompt=(
+            "You are the story-object specialist. Using the story brief, create 1-3 meaningful objects that "
+            "advance, complicate, or symbolize the story. For each object, use exactly these labeled lines, "
+            "separated by a blank line:\nName: <name>\nDescription: <concise description>\n"
+            "Tags: <comma-separated tags>"
+        ),
+        minimum_tokens=120,
+    ),
+    StorySectionSpec(
+        section="openings",
+        system_prompt=(
+            "You are the opening-scene specialist. Using the story brief, write a compelling, self-contained "
+            "opening of 2-4 paragraphs that establishes the protagonist, setting, and immediate tension. "
+            "Return only the opening as prose paragraphs."
+        ),
+        minimum_tokens=360,
     ),
 )
 
@@ -594,16 +656,15 @@ def _story_token_budget(configured_max_length: int, minimum: int) -> int:
 
 
 def _story_artifact_from_sections(sections: dict[str, Any], persona_id: str) -> StoryArtifact:
-    overview = sections.get("overview") if isinstance(sections.get("overview"), dict) else {}
     artifact = _coerce_story_artifact(
         {
             "title": (sections.get("title") or {}).get("title", ""),
-            "description": overview.get("description", ""),
+            "description": (sections.get("description") or {}).get("description", ""),
             "plot": (sections.get("plot") or {}).get("plot", ""),
-            "setting": overview.get("setting", ""),
-            "style": overview.get("style", "") or persona_id,
+            "setting": (sections.get("setting") or {}).get("setting", ""),
+            "style": (sections.get("style") or {}).get("style", "") or persona_id,
             "history": (sections.get("history") or {}).get("history", ""),
-            "tags": overview.get("tags", []),
+            "tags": (sections.get("tags") or {}).get("tags", []),
             "characters_artifact": (sections.get("characters_artifact") or {}).get("characters_artifact", []),
             "locations": (sections.get("locations") or {}).get("locations", []),
             "objects": (sections.get("objects") or {}).get("objects", []),
@@ -625,10 +686,8 @@ def _clean_story_label(value: Any) -> str:
 def _parse_story_section(generated: str, key: str) -> dict[str, Any] | None:
     loaded = _extract_first_json_block(generated)
     if isinstance(loaded, dict):
-        if key == "overview":
-            return loaded if str(loaded.get("description") or "").strip() else None
         value = loaded.get(key)
-        if key in {"title", "plot", "history"}:
+        if key in {"title", "description", "setting", "style", "brief", "plot", "history"}:
             cleaned = _clean_story_label(value) if key == "title" else str(value or "").strip()
             return {key: cleaned} if cleaned else None
         if isinstance(value, list):
@@ -639,6 +698,15 @@ def _parse_story_section(generated: str, key: str) -> dict[str, Any] | None:
         return None
     if key == "title":
         return {"title": _clean_story_label(text.splitlines()[0].strip().strip("\"'"))}
+    if key in {"description", "setting", "style", "brief"}:
+        return {key: text}
+    if key == "tags":
+        tags = [
+            _clean_story_label(tag).lower()
+            for tag in text.split(",")
+            if _clean_story_label(tag)
+        ]
+        return {"tags": tags} if tags else None
     if key == "openings":
         return {"openings": [{"description": "", "messages": [{"role": "assistant", "content": text}]}]}
     if key == "plot":
@@ -697,36 +765,34 @@ def _build_story_artifact(
     sections: dict[str, Any] = {}
     quality = "full"
 
-    overview_raw = call_local_llm(
+    coordination_notes = call_local_llm(
         _persona_layered_system_prompt(_STORY_ORCHESTRATOR_SYSTEM, persona_id, "loremaster"),
         prompt,
         max_length=_story_token_budget(max_length, 220),
     )
-    overview = _parse_story_section(overview_raw, "overview")
-    if overview is None:
+    if not coordination_notes.strip():
         quality = "partial"
-        overview = {
-            "description": overview_raw[:800],
-            "setting": "",
-            "style": persona_id,
-            "tags": [],
-            "brief": raw_idea,
-        }
-    sections["overview"] = overview
-    specialist_context = f"{prompt}\n\nOrchestrator brief:\n{overview.get('brief') or overview.get('description')}"
+        coordination_notes = "Keep all specialist outputs consistent with the user's concept."
+    specialist_context = f"{prompt}\n\nOrchestrator coordination notes:\n{coordination_notes.strip()}"
 
-    for key, system_prompt, minimum_tokens in _STORY_SECTION_SPECS:
-        role = "character" if key == "characters_artifact" else "loremaster"
+    for spec in _STORY_SECTION_SPECS:
+        role = "character" if spec.section == "characters_artifact" else "loremaster"
         generated = call_local_llm(
-            _persona_layered_system_prompt(system_prompt, persona_id, role),
+            _persona_layered_system_prompt(spec.system_prompt, persona_id, role),
             specialist_context,
-            max_length=_story_token_budget(max_length, minimum_tokens),
+            max_length=_story_token_budget(max_length, spec.minimum_tokens),
         )
-        parsed = _parse_story_section(generated, key)
+        parsed = _parse_story_section(generated, spec.section)
         if parsed is None:
             quality = "partial"
-            parsed = {key: "" if key in {"title", "plot", "history"} else []}
-        sections[key] = parsed
+            parsed = {
+                spec.section: []
+                if spec.section in {"tags", "characters_artifact", "locations", "objects", "openings"}
+                else ""
+            }
+        sections[spec.section] = parsed
+        if spec.section == "brief" and parsed.get("brief"):
+            specialist_context = f"{specialist_context}\n\nStory brief:\n{parsed['brief']}"
 
     return _story_artifact_from_sections(sections, persona_id), quality
 
@@ -806,43 +872,43 @@ async def _story_event_generator(
             return
         yield {"event": "story-stage-raw", "data": generated}
 
-    overview_raw = ""
+    coordination_notes = ""
     orchestrator_system = _persona_layered_system_prompt(
         _STORY_ORCHESTRATOR_SYSTEM, persona_id, "loremaster"
     )
-    async for event in generate_section("overview", orchestrator_system, prompt, 220):
+    async for event in generate_section("orchestrator", orchestrator_system, prompt, 220):
         if event["event"] == "story-stage-raw":
-            overview_raw = event["data"]
+            coordination_notes = event["data"]
         else:
             yield event
-    if not overview_raw:
+    if not coordination_notes:
         yield {
             "event": "story-error",
-            "data": json.dumps({"section": "overview", "detail": "The story orchestrator returned no output."}),
+            "data": json.dumps({"section": "orchestrator", "detail": "The story orchestrator returned no output."}),
         }
         return
-    overview = _parse_story_section(overview_raw, "overview")
-    if overview is None:
-        quality = "partial"
-        overview = {
-            "description": overview_raw[:800],
-            "setting": "",
-            "style": persona_id,
-            "tags": [],
-            "brief": raw_idea,
-        }
-    sections["overview"] = overview
     yield {
         "event": "story-section-complete",
-        "data": json.dumps({"section": "overview", "output": overview, "story_artifact": _story_artifact_from_sections(sections, persona_id)}),
+        "data": json.dumps(
+            {
+                "section": "orchestrator",
+                "output": {"orchestrator": coordination_notes},
+                "story_artifact": _story_artifact_from_sections(sections, persona_id),
+            }
+        ),
     }
 
-    specialist_context = f"{prompt}\n\nOrchestrator brief:\n{overview.get('brief') or overview.get('description')}"
-    for key, system_prompt, minimum_tokens in _STORY_SECTION_SPECS:
-        role = "character" if key == "characters_artifact" else "loremaster"
-        layered_system = _persona_layered_system_prompt(system_prompt, persona_id, role)
+    specialist_context = f"{prompt}\n\nOrchestrator coordination notes:\n{coordination_notes}"
+    for spec in _STORY_SECTION_SPECS:
+        role = "character" if spec.section == "characters_artifact" else "loremaster"
+        layered_system = _persona_layered_system_prompt(spec.system_prompt, persona_id, role)
         generated = ""
-        async for event in generate_section(key, layered_system, specialist_context, minimum_tokens):
+        async for event in generate_section(
+            spec.section,
+            layered_system,
+            specialist_context,
+            spec.minimum_tokens,
+        ):
             if event["event"] == "story-stage-raw":
                 generated = event["data"]
             else:
@@ -850,19 +916,30 @@ async def _story_event_generator(
         if not generated:
             yield {
                 "event": "story-error",
-                "data": json.dumps({"section": key, "detail": f"The {key} specialist returned no output."}),
+                "data": json.dumps(
+                    {
+                        "section": spec.section,
+                        "detail": f"The {spec.section} specialist returned no output.",
+                    }
+                ),
             }
             return
-        parsed = _parse_story_section(generated, key)
+        parsed = _parse_story_section(generated, spec.section)
         if parsed is None:
             quality = "partial"
-            parsed = {key: "" if key in {"title", "plot", "history"} else []}
-        sections[key] = parsed
+            parsed = {
+                spec.section: []
+                if spec.section in {"tags", "characters_artifact", "locations", "objects", "openings"}
+                else ""
+            }
+        sections[spec.section] = parsed
+        if spec.section == "brief" and parsed.get("brief"):
+            specialist_context = f"{specialist_context}\n\nStory brief:\n{parsed['brief']}"
         yield {
             "event": "story-section-complete",
             "data": json.dumps(
                 {
-                    "section": key,
+                    "section": spec.section,
                     "output": parsed,
                     "story_artifact": _story_artifact_from_sections(sections, persona_id),
                 }

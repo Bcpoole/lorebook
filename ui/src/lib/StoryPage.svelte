@@ -696,7 +696,7 @@
         <p>Generation complete.</p>
       {/if}
       <div class="progress-stages">
-        {#each ['overview', 'title', 'plot', 'history', 'characters_artifact', 'locations', 'objects', 'openings'] as section}
+        {#each ['orchestrator', 'brief', 'description', 'setting', 'style', 'tags', 'title', 'plot', 'history', 'characters_artifact', 'locations', 'objects', 'openings'] as section}
           <span class:complete={generationProgress.completedSections.includes(section)} class:active={generationProgress.activeSection === section}>
             {section.replaceAll('_', ' ')}
           </span>
